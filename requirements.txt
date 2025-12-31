@@ -2,4 +2,8 @@ Flask
 flask-cors
 requests
 mammoth
+google-api-python-client
+google-auth
+google-auth-oauthlib
+python-docx
 gunicorn
