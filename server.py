@@ -1,232 +1,164 @@
 import os
 import io
-import json
 import requests
+import mammoth
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, redirect, send_file
 from flask_cors import CORS
 
-import mammoth
-from docx import Document
-
-from google.oauth2 import service_account
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-
-
-# ================== APP ==================
+from docx import Document
 
 app = Flask(__name__)
 CORS(app)
 
+# ================= OAUTH CONFIG =================
 
-# ================== GOOGLE DRIVE SETUP ==================
+CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
+CLIENT_SECRET = os.environ["GOOGLE_CLIENT_SECRET"]
+REDIRECT_URI = os.environ["OAUTH_REDIRECT_URI"]
 
-SCOPES = ["https://www.googleapis.com/auth/drive"]
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
-SERVICE_ACCOUNT_INFO = json.loads(
-    os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
-)
+credentials = None   # stored in memory
 
-credentials = service_account.Credentials.from_service_account_info(
-    SERVICE_ACCOUNT_INFO, scopes=SCOPES
-)
+# ================= OAUTH ROUTES =================
 
-drive = build("drive", "v3", credentials=credentials)
-
-ROOT_FOLDER_NAME = "Malwa_RIS_Reports"
-
-
-def get_or_create_folder(name, parent_id=None):
-    query = (
-        f"name='{name}' and "
-        f"mimeType='application/vnd.google-apps.folder' and "
-        f"trashed=false"
+@app.route("/login")
+def login():
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [REDIRECT_URI],
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI,
     )
-    if parent_id:
-        query += f" and '{parent_id}' in parents"
 
-    res = drive.files().list(
-        q=query,
-        fields="files(id,name)"
-    ).execute()
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        prompt="consent"
+    )
 
-    files = res.get("files", [])
-    if files:
-        return files[0]["id"]
-
-    metadata = {
-        "name": name,
-        "mimeType": "application/vnd.google-apps.folder"
-    }
-    if parent_id:
-        metadata["parents"] = [parent_id]
-
-    folder = drive.files().create(
-        body=metadata,
-        fields="id"
-    ).execute()
-
-    return folder["id"]
+    return redirect(auth_url)
 
 
-ROOT_FOLDER_ID = get_or_create_folder(ROOT_FOLDER_NAME)
+@app.route("/oauth2callback")
+def oauth2callback():
+    global credentials
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [REDIRECT_URI],
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI,
+    )
+
+    flow.fetch_token(authorization_response=request.url)
+    credentials = flow.credentials
+
+    return "Login successful. You can close this tab."
 
 
-# ================== ROUTES ==================
+def get_drive():
+    if not credentials:
+        raise Exception("User not logged in")
+    return build("drive", "v3", credentials=credentials)
 
-@app.route("/")
-def home():
-    return "Malwa RIS backend running"
-
-
-# ---------- TEMPLATE FROM GITHUB URL ----------
+# ================= TEMPLATE LOADING =================
 
 @app.route("/api/template_from_url", methods=["POST"])
 def template_from_url():
-    try:
-        data = request.get_json()
-        url = data.get("url")
+    url = request.json["url"]
+    r = requests.get(url)
+    docx_bytes = io.BytesIO(r.content)
+    html = mammoth.convert_to_html(docx_bytes).value
+    return jsonify({"html": html})
 
-        if not url:
-            return jsonify({"error": "URL missing"}), 400
-
-        r = requests.get(url, timeout=20)
-        r.raise_for_status()
-
-        docx_bytes = io.BytesIO(r.content)
-
-        result = mammoth.convert_to_html(docx_bytes)
-        html = result.value
-
-        return jsonify({"html": html})
-
-    except Exception as e:
-        print("TEMPLATE_FROM_URL ERROR:", str(e))
-        return jsonify({"error": str(e)}), 500
-
-
-# ---------- UPLOAD WORD → HTML ----------
 
 @app.route("/api/word_to_html", methods=["POST"])
 def word_to_html():
-    try:
-        file = request.files["file"]
-        docx_bytes = io.BytesIO(file.read())
+    f = request.files["file"]
+    html = mammoth.convert_to_html(io.BytesIO(f.read())).value
+    return jsonify({"html": html})
 
-        result = mammoth.convert_to_html(docx_bytes)
-        html = result.value
-
-        return jsonify({"html": html})
-
-    except Exception as e:
-        print("WORD_TO_HTML ERROR:", str(e))
-        return jsonify({"error": str(e)}), 500
-
-
-# ---------- SAVE REPORT TO GOOGLE DRIVE ----------
+# ================= SAVE REPORT =================
 
 @app.route("/api/save_report", methods=["POST"])
 def save_report():
+    if not credentials:
+        return jsonify({"login_required": True}), 401
+
     data = request.json
-
-    patient = data["patient_name"]
-    uhid = data["uhid"]
-    modality = data["modality"]
-    html = data["html"]
-
-    modality_folder_id = get_or_create_folder(modality, ROOT_FOLDER_ID)
+    drive = get_drive()
 
     doc = Document()
-    doc.add_paragraph(f"Patient: {patient} | UHID: {uhid} | Modality: {modality}")
-    doc.add_paragraph("")
-
-    # Very simple HTML → text (safe & predictable)
-    text = (
-        html.replace("<br>", "\n")
-            .replace("<p>", "")
-            .replace("</p>", "\n")
-            .replace("&nbsp;", " ")
-    )
-
-    for line in text.split("\n"):
+    for line in data["html"].replace("<p>", "").replace("</p>", "\n").split("\n"):
         if line.strip():
-            doc.add_paragraph(line.strip())
+            doc.add_paragraph(line)
 
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
-
-    filename = f"{patient}_{uhid}_{modality}.docx".replace(" ", "_")
 
     media = MediaIoBaseUpload(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-    drive.files().create(
-        body={
-            "name": filename,
-            "parents": [modality_folder_id]
-        },
+    file = drive.files().create(
+        body={"name": f"{data['patient_name']}_{data['uhid']}.docx"},
         media_body=media,
         fields="id"
     ).execute()
 
-    return jsonify({"status": "saved"})
+    return jsonify({"status": "saved", "id": file["id"]})
 
+# ================= FETCH REPORTS =================
 
-# ---------- FETCH REPORT LIST ----------
+@app.route("/api/reports")
+def reports():
+    if not credentials:
+        return jsonify([])
 
-@app.route("/api/reports", methods=["GET"])
-def fetch_reports():
-    results = []
+    drive = get_drive()
+    files = drive.files().list(
+        q="trashed=false",
+        fields="files(id,name)"
+    ).execute()["files"]
 
-    for modality in ["CT", "MRI", "XRAY", "USG"]:
-        folder_id = get_or_create_folder(modality, ROOT_FOLDER_ID)
+    return jsonify(files)
 
-        files = drive.files().list(
-            q=f"'{folder_id}' in parents and trashed=false",
-            fields="files(id,name)"
-        ).execute().get("files", [])
-
-        for f in files:
-            results.append({
-                "id": f["id"],
-                "filename": f["name"],
-                "modality": modality
-            })
-
-    return jsonify(results)
-
-
-# ---------- DOWNLOAD WORD ----------
+# ================= DOWNLOAD =================
 
 @app.route("/api/download_word/<file_id>")
-def download_word(file_id):
-    request_drive = drive.files().get_media(fileId=file_id)
-
+def download(file_id):
+    drive = get_drive()
+    req = drive.files().get_media(fileId=file_id)
     fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request_drive)
-
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
-
+    MediaIoBaseDownload(fh, req).next_chunk()
     fh.seek(0)
+    return send_file(fh, as_attachment=True, download_name="report.docx")
 
-    return send_file(
-        fh,
-        as_attachment=True,
-        download_name="report.docx",
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-
-
-# ================== RUN ==================
+# ================= RUN =================
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
