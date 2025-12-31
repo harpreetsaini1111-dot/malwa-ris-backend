@@ -1,145 +1,175 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-import os
-import uuid
-import datetime
-import io
 import requests
-
-from docx import Document
 import mammoth
-from bs4 import BeautifulSoup
-
-# ---------------- BASIC APP SETUP ----------------
+import io
+import os
+import json
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from docx import Document
 
 app = Flask(__name__)
 CORS(app)
 
-# Use Render persistent disk if available
-BASE_STORAGE = "/data/reports" if os.path.exists("/data") else "storage/reports"
-os.makedirs(BASE_STORAGE, exist_ok=True)
+# ===================== GOOGLE DRIVE SETUP =====================
 
-# Simple in-memory index (OK for now)
-REPORT_INDEX = {}
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
-# ---------------- HEALTH CHECK ----------------
+SERVICE_ACCOUNT_INFO = json.loads(
+    os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+)
 
-@app.route("/")
-def home():
-    return "Malwa RIS backend running"
+credentials = service_account.Credentials.from_service_account_info(
+    SERVICE_ACCOUNT_INFO, scopes=SCOPES
+)
 
-# ---------------- WORD TEMPLATE FROM GITHUB URL ----------------
+drive_service = build("drive", "v3", credentials=credentials)
+
+ROOT_FOLDER_NAME = "Malwa_RIS_Reports"
+
+def get_or_create_folder(name, parent_id=None):
+    query = f"name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    if parent_id:
+        query += f" and '{parent_id}' in parents"
+
+    res = drive_service.files().list(q=query, fields="files(id)").execute()
+    files = res.get("files", [])
+
+    if files:
+        return files[0]["id"]
+
+    metadata = {
+        "name": name,
+        "mimeType": "application/vnd.google-apps.folder"
+    }
+    if parent_id:
+        metadata["parents"] = [parent_id]
+
+    folder = drive_service.files().create(
+        body=metadata, fields="id"
+    ).execute()
+
+    return folder["id"]
+
+ROOT_FOLDER_ID = get_or_create_folder(ROOT_FOLDER_NAME)
+
+# ===================== TEMPLATE FROM GITHUB =====================
 
 @app.route("/api/template_from_url", methods=["POST"])
 def template_from_url():
-    data = request.json
-    url = data.get("url")
+    try:
+        url = request.json.get("url")
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
 
-    if not url:
-        return jsonify({"error": "Template URL missing"}), 400
+        docx = io.BytesIO(r.content)
+        result = mammoth.convert_to_html(docx)
 
-    r = requests.get(url)
-    if r.status_code != 200:
-        return jsonify({"error": "Failed to download template"}), 400
+        return jsonify({"html": result.value})
 
-    with mammoth.convert_to_html(io.BytesIO(r.content)) as result:
-        html = result.value
+    except Exception as e:
+        print("TEMPLATE LOAD ERROR:", e)
+        return jsonify({"error": str(e)}), 500
 
-    return jsonify({"html": html})
-
-# ---------------- UPLOAD WORD FILE → HTML ----------------
+# ===================== WORD → HTML =====================
 
 @app.route("/api/word_to_html", methods=["POST"])
 def word_to_html():
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
+    try:
+        f = request.files["file"]
+        docx = io.BytesIO(f.read())
+        result = mammoth.convert_to_html(docx)
+        return jsonify({"html": result.value})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    with mammoth.convert_to_html(file) as result:
-        html = result.value
-
-    return jsonify({"html": html})
-
-# ---------------- SAVE REPORT (HTML → DOCX) ----------------
+# ===================== SAVE REPORT =====================
 
 @app.route("/api/save_report", methods=["POST"])
 def save_report():
     data = request.json
 
-    patient = data.get("patient_name", "Unknown")
-    uhid = data.get("uhid", "NA")
-    modality = data.get("modality", "GEN").upper()
-    study = data.get("study", "Report")
-    html = data.get("html", "")
+    patient = data["patient_name"]
+    uhid = data["uhid"]
+    modality = data["modality"]
+    html = data["html"]
 
-    report_id = str(uuid.uuid4())
-    year = str(datetime.datetime.now().year)
-
-    modality_dir = os.path.join(BASE_STORAGE, modality, year)
-    os.makedirs(modality_dir, exist_ok=True)
-
-    filename = (
-        f"{patient}_{uhid}_{modality}_{study}_{datetime.date.today()}.docx"
-        .replace(" ", "_")
-    )
-
-    filepath = os.path.join(modality_dir, filename)
+    modality_folder = get_or_create_folder(modality, ROOT_FOLDER_ID)
 
     doc = Document()
+    doc.add_paragraph("", style=None)
+    doc.add_paragraph(html.replace("<br>", "\n"))
 
-    # Header info (NOT hospital name)
-    doc.add_paragraph(
-        f"Patient Name: {patient}    "
-        f"UHID: {uhid}    "
-        f"Modality: {modality}"
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    filename = f"{patient}_{uhid}.docx"
+
+    media = MediaIoBaseUpload(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
-    doc.add_paragraph("")
 
-    soup = BeautifulSoup(html, "html.parser")
-
-    for p in soup.find_all(["p", "li"]):
-        text = p.get_text(" ").strip()
-        if text:
-            doc.add_paragraph(text)
-
-    doc.save(filepath)
-
-    REPORT_INDEX[report_id] = {
-        "id": report_id,
-        "patient": patient,
-        "uhid": uhid,
-        "modality": modality,
-        "study": study,
-        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "path": filepath
+    file_metadata = {
+        "name": filename,
+        "parents": [modality_folder]
     }
 
-    return jsonify({"id": report_id})
+    drive_service.files().create(
+        body=file_metadata,
+        media_body=media
+    ).execute()
 
-# ---------------- FETCH SAVED REPORTS ----------------
+    return jsonify({"status": "saved"})
 
-@app.route("/api/reports")
+# ===================== FETCH REPORTS =====================
+
+@app.route("/api/reports", methods=["GET"])
 def fetch_reports():
-    return jsonify(list(REPORT_INDEX.values()))
+    results = []
 
-# ---------------- DOWNLOAD WORD REPORT ----------------
+    for modality in ["CT", "MRI", "XRAY", "USG"]:
+        folder_id = get_or_create_folder(modality, ROOT_FOLDER_ID)
+        files = drive_service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            fields="files(id,name)"
+        ).execute().get("files", [])
 
-@app.route("/api/download_word/<rid>")
-def download_word(rid):
-    report = REPORT_INDEX.get(rid)
+        for f in files:
+            results.append({
+                "id": f["id"],
+                "filename": f["name"],
+                "modality": modality
+            })
 
-    if not report:
-        return "Report not found", 404
+    return jsonify(results)
 
-    path = report["path"]
+# ===================== DOWNLOAD WORD =====================
 
-    if not os.path.exists(path):
-        return "File missing on server", 404
+@app.route("/api/download_word/<file_id>")
+def download_word(file_id):
+    request_drive = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request_drive)
 
-    return send_file(path, as_attachment=True)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
 
-# ---------------- RUN ----------------
+    fh.seek(0)
+    return send_file(
+        fh,
+        as_attachment=True,
+        download_name="report.docx",
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+# ===================== RUN =====================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=10000)
+
 
