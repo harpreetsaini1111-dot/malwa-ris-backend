@@ -1,6 +1,5 @@
-flask
+Flask
 flask-cors
-python-docx
-mammoth
 requests
-beautifulsoup4
+mammoth
+gunicorn
