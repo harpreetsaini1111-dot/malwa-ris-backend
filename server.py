@@ -1,127 +1,117 @@
 import os
 import io
-import requests
-import mammoth
-
+import json
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-from docx import Document
 
 # ================= APP SETUP =================
 
 app = Flask(__name__)
 CORS(app)
 
-# ================= GOOGLE DRIVE SETUP =================
+# ================= GOOGLE CONFIG =================
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
-CREDS_PATH = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
-DRIVE_ROOT_ID = os.environ["DRIVE_ROOT_ID"]
+SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+if not SERVICE_ACCOUNT_JSON:
+    raise RuntimeError("Missing GOOGLE_SERVICE_ACCOUNT_JSON environment variable")
 
-creds = service_account.Credentials.from_service_account_file(
-    CREDS_PATH,
+service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+
+credentials = service_account.Credentials.from_service_account_info(
+    service_account_info,
     scopes=SCOPES
 )
 
-drive = build("drive", "v3", credentials=creds)
+drive_service = build("drive", "v3", credentials=credentials)
 
-# ================= ROOT =================
+DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID")  # optional
 
-@app.route("/")
-def home():
-    return jsonify({"status": "ok", "service": "Malwa RIS Backend"})
+# ================= HEALTH CHECK =================
 
-# ================= WORD → HTML =================
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
 
-@app.route("/api/word_to_html", methods=["POST"])
-def word_to_html():
-    f = request.files["file"]
-    html = mammoth.convert_to_html(io.BytesIO(f.read())).value
-    return jsonify({"html": html})
+# ================= UPLOAD FILE =================
 
-# ================= SAVE REPORT =================
+@app.route("/upload", methods=["POST"])
+def upload_file():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
 
-@app.route("/api/save_report", methods=["POST"])
-def save_report():
-    data = request.json
+    file = request.files["file"]
+    filename = file.filename
 
-    doc = Document()
-    text = data["html"].replace("<p>", "").replace("</p>", "\n")
-    for line in text.split("\n"):
-        if line.strip():
-            doc.add_paragraph(line)
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
+    file_metadata = {"name": filename}
+    if DRIVE_FOLDER_ID:
+        file_metadata["parents"] = [DRIVE_FOLDER_ID]
 
     media = MediaIoBaseUpload(
-        buf,
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        io.BytesIO(file.read()),
+        mimetype=file.content_type,
+        resumable=True
     )
 
-    filename = f"{data['patient_name']}_{data['uhid']}_{data['date']}.docx"
-
-    file = drive.files().create(
-        body={
-            "name": filename,
-            "parents": [DRIVE_ROOT_ID]
-        },
+    uploaded = drive_service.files().create(
+        body=file_metadata,
         media_body=media,
-        fields="id"
+        fields="id, name"
     ).execute()
 
-    return jsonify({"status": "saved", "id": file["id"]})
+    return jsonify({
+        "message": "File uploaded",
+        "file_id": uploaded["id"],
+        "file_name": uploaded["name"]
+    })
 
-# ================= LIST REPORTS =================
+# ================= LIST FILES =================
 
-@app.route("/api/reports")
-def reports():
-    q = "trashed=false"
+@app.route("/files", methods=["GET"])
+def list_files():
+    query = None
+    if DRIVE_FOLDER_ID:
+        query = f"'{DRIVE_FOLDER_ID}' in parents"
 
-    files = drive.files().list(
-        q=q,
-        fields="files(id,name)"
-    ).execute().get("files", [])
+    results = drive_service.files().list(
+        q=query,
+        pageSize=50,
+        fields="files(id, name, mimeType)"
+    ).execute()
 
-    out = []
-    for f in files:
-        parts = f["name"].rsplit("_", 2)
-        if len(parts) == 3:
-            out.append({
-                "id": f["id"],
-                "patient_name": parts[0],
-                "uhid": parts[1],
-                "date": parts[2].replace(".docx", ""),
-                "modality": "—"
-            })
+    return jsonify(results.get("files", []))
 
-    return jsonify(out)
+# ================= DOWNLOAD FILE =================
 
-# ================= DOWNLOAD =================
-
-@app.route("/api/download_word/<file_id>")
-def download_word(file_id):
-    request_drive = drive.files().get_media(fileId=file_id)
+@app.route("/download/<file_id>", methods=["GET"])
+def download_file(file_id):
+    request_drive = drive_service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
-    MediaIoBaseDownload(fh, request_drive).next_chunk()
+    downloader = MediaIoBaseDownload(fh, request_drive)
+
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
     fh.seek(0)
 
     return send_file(
         fh,
         as_attachment=True,
-        download_name="report.docx"
+        download_name="downloaded_file"
     )
 
 # ================= RUN =================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
 
 
 
