@@ -53,7 +53,7 @@ def get_oauth_flow():
     return Flow.from_client_config(
         {
             "web": {
-                "client_id": 919763430938-9cuvvfi9m259890lveqrlua3rqtamob8.apps.googleusercontent.com,
+                "client_id": "919763430938-9cuvvfi9m259890lveqrlua3rqtamob8.apps.googleusercontent.com",
                 "client_secret": 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,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
