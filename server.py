@@ -17,9 +17,9 @@ CORS(app)
 
 # ================= OAUTH CONFIG =================
 
-CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
-CLIENT_SECRET = os.environ["GOOGLE_CLIENT_SECRET"]
-REDIRECT_URI = os.environ["OAUTH_REDIRECT_URI"]
+CLIENT_ID = os.environ["919763430938-9cuvvfi9m259890lveqrlua3rqtamob8.apps.googleusercontent.com"]
+CLIENT_SECRET = os.environ["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"]
+REDIRECT_URI = os.environ["https://malwa-ris-backend.onrender.com/oauth2callback"]
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
