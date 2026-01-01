@@ -57,7 +57,7 @@ def get_oauth_flow():
                 "client_secret": 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,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [https://malwa-ris-backend.onrender.com/oauth2callback],
+                "redirect_uris": ["https://malwa-ris-backend.onrender.com/oauth2callback"],
             }
         },
         scopes=SCOPES,
