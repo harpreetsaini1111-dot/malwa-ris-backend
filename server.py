@@ -32,6 +32,21 @@ drive_service = build("drive", "v3", credentials=credentials)
 
 DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID")  # optional
 
+# ================= ROOT (THIS IS THE FIX) =================
+
+@app.route("/")
+def root():
+    return jsonify({
+        "service": "Malwa RIS Backend",
+        "status": "running",
+        "endpoints": [
+            "/health",
+            "/upload",
+            "/files",
+            "/download/<file_id>"
+        ]
+    })
+
 # ================= HEALTH CHECK =================
 
 @app.route("/health")
@@ -90,6 +105,11 @@ def list_files():
 
 @app.route("/download/<file_id>", methods=["GET"])
 def download_file(file_id):
+    meta = drive_service.files().get(
+        fileId=file_id,
+        fields="name"
+    ).execute()
+
     request_drive = drive_service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request_drive)
@@ -103,7 +123,7 @@ def download_file(file_id):
     return send_file(
         fh,
         as_attachment=True,
-        download_name="downloaded_file"
+        download_name=meta["name"]
     )
 
 # ================= RUN =================
@@ -111,6 +131,7 @@ def download_file(file_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
