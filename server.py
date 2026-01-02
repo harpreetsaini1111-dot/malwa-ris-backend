@@ -1,233 +1,183 @@
-import os, io, json, uuid
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+import io
+from flask import Flask, request, jsonify, render_template
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-
 from docx import Document
-import mammoth
+from bs4 import BeautifulSoup
 
-# ================= CONFIG =================
-
-SCOPES = ["https://www.googleapis.com/auth/drive"]
-ROOT_FOLDER_ID = os.environ["DRIVE_FOLDER_ID"]
-SERVICE_ACCOUNT_JSON = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
-
-# ================= APP =================
+from drive import get_drive_service
 
 app = Flask(__name__)
-CORS(app)
 
-creds = service_account.Credentials.from_service_account_info(
-    SERVICE_ACCOUNT_JSON, scopes=SCOPES
-)
-drive = build("drive", "v3", credentials=creds)
+# ===== DRIVE ROOT IDS =====
+TEMPLATES_ROOT_ID = "1Pv6AQsCyDZZciUnnLCJAgaiISd9Qdpwa"
+REPORTS_ROOT_ID   = "14MQZDL9DP7BZF45MbRIlKsReVJ5CSJV3"
 
-# ================= DRIVE HELPERS =================
+MONTHS = {
+    "01": "01_January", "02": "02_February", "03": "03_March",
+    "04": "04_April", "05": "05_May", "06": "06_June",
+    "07": "07_July", "08": "08_August", "09": "09_September",
+    "10": "10_October", "11": "11_November", "12": "12_December"
+}
 
-def find_or_create_folder(name, parent):
+# ---------- HELPERS ----------
+
+def get_or_create_folder(service, name, parent_id):
     q = (
-        f"'{parent}' in parents and "
+        f"'{parent_id}' in parents and "
         f"name='{name}' and "
         f"mimeType='application/vnd.google-apps.folder' and trashed=false"
     )
-    r = drive.files().list(q=q, fields="files(id)").execute()
-    if r["files"]:
-        return r["files"][0]["id"]
+    res = service.files().list(q=q, fields="files(id)").execute()
+    files = res.get("files", [])
+    if files:
+        return files[0]["id"]
 
-    meta = {
-        "name": name,
-        "mimeType": "application/vnd.google-apps.folder",
-        "parents": [parent]
-    }
-    f = drive.files().create(body=meta, fields="id").execute()
-    return f["id"]
-
-def upload_bytes(name, data, parent, mime="text/html"):
-    media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mime, resumable=False)
-    f = drive.files().create(
-        body={"name": name, "parents": [parent]},
-        media_body=media,
+    folder = service.files().create(
+        body={
+            "name": name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id]
+        },
         fields="id"
     ).execute()
-    return f["id"]
 
-def download_bytes(file_id):
-    req = drive.files().get_media(fileId=file_id)
+    return folder["id"]
+
+def html_to_docx(html, patient, title):
+    doc = Document()
+    doc.add_heading(title, 1)
+
+    p = doc.add_paragraph()
+    p.add_run(f"Patient: {patient['name']}   ")
+    p.add_run(f"Age/Sex: {patient['age']}/{patient['sex']}   ")
+    p.add_run(f"UHID: {patient['uhid']}\n")
+    p.add_run(f"Ref: {patient['ref']}   ")
+    p.add_run(f"Date: {patient['date']}")
+
+    doc.add_paragraph("")
+
+    soup = BeautifulSoup(html, "html.parser")
+    for el in soup.find_all(["h1", "h2", "h3", "p"]):
+        if el.name.startswith("h"):
+            doc.add_heading(el.get_text(), level=2)
+        else:
+            doc.add_paragraph(el.get_text())
+
+    return doc
+
+# ---------- ROUTES ----------
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+# ===== TEMPLATE APIs =====
+
+@app.route("/templates")
+def list_templates():
+    modality = request.args.get("modality")
+    service = get_drive_service()
+
+    folder_id = get_or_create_folder(service, modality, TEMPLATES_ROOT_ID)
+    q = f"'{folder_id}' in parents and trashed=false"
+
+    res = service.files().list(
+        q=q, fields="files(id,name,mimeType)"
+    ).execute()
+
+    files = [
+        {"id": f["id"], "name": f["name"]}
+        for f in res.get("files", [])
+        if f["mimeType"] != "application/vnd.google-apps.folder"
+    ]
+
+    return jsonify(files)
+
+@app.route("/templates/<file_id>")
+def load_template(file_id):
+    service = get_drive_service()
+    req = service.files().get_media(fileId=file_id)
+
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, req)
     done = False
     while not done:
         _, done = downloader.next_chunk()
-    fh.seek(0)
-    return fh
 
-# ================= INDEX =================
+    return jsonify({"html": fh.getvalue().decode("utf-8")})
 
-def load_index():
-    r = drive.files().list(
-        q=f"'{ROOT_FOLDER_ID}' in parents and name='reports.json' and trashed=false",
-        fields="files(id)"
-    ).execute()
+@app.route("/templates/save", methods=["POST"])
+def save_template():
+    data = request.json
+    service = get_drive_service()
 
-    if not r["files"]:
-        return [], None
+    folder_id = get_or_create_folder(service, data["modality"], TEMPLATES_ROOT_ID)
 
-    fid = r["files"][0]["id"]
-    data = json.load(download_bytes(fid))
-    return data, fid
-
-def save_index(data, fid):
-    raw = json.dumps(data, indent=2).encode()
-    media = MediaIoBaseUpload(io.BytesIO(raw), mimetype="application/json")
-    if fid:
-        drive.files().update(fileId=fid, media_body=media).execute()
-    else:
-        upload_bytes("reports.json", raw, ROOT_FOLDER_ID, "application/json")
-
-# ================= UTIL =================
-
-def word_to_html(file_bytes):
-    with io.BytesIO(file_bytes) as f:
-        result = mammoth.convert_to_html(f)
-    return result.value
-
-def html_to_word(html):
-    doc = Document()
-    doc.add_heading("Radiology Report", level=1)
-    doc.add_paragraph(html)
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf
-
-# ================= ROUTES =================
-
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok"})
-
-# -------- SAVE REPORT FROM EDITOR --------
-
-@app.route("/api/save_report", methods=["POST"])
-def save_report():
-    p = request.json
-    rid = str(uuid.uuid4())
-
-    modality_folder = find_or_create_folder(p["modality"], ROOT_FOLDER_ID)
-
-    html_id = upload_bytes(
-        f"{p['patient_name']}_{rid}.html",
-        p["html"].encode("utf-8"),
-        modality_folder
+    media = MediaIoBaseUpload(
+        io.BytesIO(data["html"].encode("utf-8")),
+        mimetype="text/html",
+        resumable=False
     )
 
-    index, fid = load_index()
-    index.append({
-        "id": rid,
-        "patient_name": p["patient_name"],
-        "uhid": p.get("uhid",""),
-        "date": p.get("date",""),
-        "modality": p["modality"],
-        "html_file_id": html_id
-    })
-    save_index(index, fid)
+    service.files().create(
+        body={
+            "name": data["name"],
+            "parents": [folder_id]
+        },
+        media_body=media
+    ).execute()
 
     return jsonify({"status": "saved"})
 
-# -------- UPLOAD WORD REPORT --------
+# ===== REPORT API =====
 
-@app.route("/api/upload_report", methods=["POST"])
-def upload_report():
-    f = request.files["file"]
-    modality = request.form["modality"]
-    patient = request.form.get("patient_name", "Uploaded_Report")
-    rid = str(uuid.uuid4())
+@app.route("/reports/save", methods=["POST"])
+def save_report():
+    data = request.json
+    service = get_drive_service()
 
-    modality_folder = find_or_create_folder(modality, ROOT_FOLDER_ID)
+    modality = data["modality"]
+    patient = data["patient"]
+    html = data["final_html"]
 
-    html = word_to_html(f.read())
-    html_id = upload_bytes(
-        f"{patient}_{rid}.html",
-        html.encode(),
-        modality_folder
+    modality_id = get_or_create_folder(service, modality, REPORTS_ROOT_ID)
+    year_id = get_or_create_folder(service, patient["date"][:4], modality_id)
+    month_id = get_or_create_folder(
+        service,
+        MONTHS[patient["date"][5:7]],
+        year_id
     )
 
-    index, fid = load_index()
-    index.append({
-        "id": rid,
-        "patient_name": patient,
-        "uhid": "",
-        "date": "",
-        "modality": modality,
-        "html_file_id": html_id
-    })
-    save_index(index, fid)
+    patient_folder = f"{patient['uhid']}_{patient['name'].replace(' ', '_')}"
+    patient_id = get_or_create_folder(service, patient_folder, month_id)
 
-    return jsonify({"status": "uploaded"})
+    doc = html_to_docx(html, patient, f"{modality} Report")
+    bio = io.BytesIO()
+    doc.save(bio)
+    bio.seek(0)
 
-# -------- SEARCH REPORTS --------
+    media = MediaIoBaseUpload(
+        bio,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        resumable=False
+    )
 
-@app.route("/api/reports")
-def search_reports():
-    p = request.args.get("patient_name","").lower()
-    index,_ = load_index()
+    file = service.files().create(
+        body={
+            "name": f"{modality}_{patient['date']}.docx",
+            "parents": [patient_id]
+        },
+        media_body=media,
+        fields="webViewLink"
+    ).execute()
 
-    out = []
-    for r in index:
-        if p and p not in r["patient_name"].lower():
-            continue
-        out.append(r)
-    return jsonify(out)
+    return jsonify({"status": "saved", "link": file["webViewLink"]})
 
-# -------- LOAD REPORT INTO EDITOR --------
-
-@app.route("/api/load_report/<rid>")
-def load_report(rid):
-    index,_ = load_index()
-    r = next(x for x in index if x["id"] == rid)
-    html = download_bytes(r["html_file_id"]).read().decode()
-    return jsonify({"html": html})
-
-# -------- DOWNLOAD WORD --------
-
-@app.route("/api/download_word/<rid>")
-def download_word(rid):
-    index,_ = load_index()
-    r = next(x for x in index if x["id"] == rid)
-    html = download_bytes(r["html_file_id"]).read().decode()
-    buf = html_to_word(html)
-    return send_file(buf, as_attachment=True,
-                     download_name=f"{r['patient_name']}.docx")
-
-# ================= TEMPLATES (DRIVE) =================
-
-def templates_root():
-    return find_or_create_folder("Templates", ROOT_FOLDER_ID)
-
-@app.route("/api/templates/<modality>")
-def list_templates(modality):
-    root = templates_root()
-    folder = find_or_create_folder(modality, root)
-
-    files = drive.files().list(
-        q=f"'{folder}' in parents and trashed=false",
-        fields="files(id,name)"
-    ).execute().get("files", [])
-
-    return jsonify(files)
-
-@app.route("/api/load_template/<template_id>")
-def load_template(template_id):
-    html = download_bytes(template_id).read().decode("utf-8")
-    return jsonify({"html": html})
-
-# ================= RUN =================
+# ---------- RUN ----------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=8080)
+
 
 
 
