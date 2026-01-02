@@ -10,9 +10,7 @@
       background: #f4f6fb;
       margin: 20px;
     }
-    h2 {
-      margin-bottom: 10px;
-    }
+    h2 { margin-bottom: 10px; }
     .bar {
       background: #ffffff;
       padding: 10px;
@@ -37,14 +35,8 @@
       border-radius: 5px;
       cursor: pointer;
     }
-    .btn-template {
-      background: #2563eb;
-      color: #fff;
-    }
-    .btn-report {
-      background: #16a34a;
-      color: #fff;
-    }
+    .btn-template { background: #2563eb; color: #fff; }
+    .btn-report { background: #16a34a; color: #fff; }
   </style>
 </head>
 
@@ -77,7 +69,7 @@
   </select>
 </div>
 
-<!-- PATIENT DETAILS (REPORT MODE ONLY) -->
+<!-- PATIENT DETAILS -->
 <div class="bar" id="patientBlock" style="display:none;">
   Name <input id="name">
   Age <input id="age" size="3">
@@ -104,10 +96,10 @@ function loadTemplates() {
 
   fetch(`/templates?modality=${modality}`)
     .then(r => r.json())
-    .then(data => {
+    .then(list => {
       const sel = document.getElementById("templateList");
       sel.innerHTML = '<option value="">-- Select Template --</option>';
-      data.forEach(t => {
+      list.forEach(t => {
         sel.innerHTML += `<option value="${t.id}">${t.name}</option>`;
       });
     });
@@ -120,7 +112,7 @@ function loadTemplate() {
   fetch(`/templates/${id}`)
     .then(r => r.json())
     .then(d => {
-      document.getElementById("editor").value = d.html;
+      document.getElementById("editor").value = d.html || "";
     });
 }
 
@@ -135,13 +127,15 @@ function saveTemplate() {
 
   fetch("/templates/save", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       modality: document.getElementById("modality").value,
       name: name + ".html",
       html: document.getElementById("editor").value
     })
-  }).then(() => alert("Template saved"));
+  })
+  .then(r => r.json())
+  .then(() => alert("Template saved"));
 }
 
 /* ---------- REPORT FUNCTION ---------- */
@@ -154,7 +148,7 @@ function saveReport() {
 
   fetch("/reports/save", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       modality: document.getElementById("modality").value,
       study: "General",
@@ -170,7 +164,13 @@ function saveReport() {
     })
   })
   .then(r => r.json())
-  .then(d => alert("Report saved\n" + d.link));
+  .then(d => {
+    if (d.link) {
+      alert("Report saved\n" + d.link);
+    } else {
+      alert("Saved, but no link returned");
+    }
+  });
 }
 
 /* ---------- MODE TOGGLE ---------- */
@@ -183,3 +183,4 @@ document.getElementById("mode").addEventListener("change", e => {
 
 </body>
 </html>
+
