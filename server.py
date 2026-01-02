@@ -31,7 +31,7 @@ def find_or_create_folder(name, parent):
     q = (
         f"'{parent}' in parents and "
         f"name='{name}' and "
-        f"mimeType='application/vnd.google-apps.folder'"
+        f"mimeType='application/vnd.google-apps.folder' and trashed=false"
     )
     r = drive.files().list(q=q, fields="files(id)").execute()
     if r["files"]:
@@ -46,7 +46,7 @@ def find_or_create_folder(name, parent):
     return f["id"]
 
 def upload_bytes(name, data, parent, mime="text/html"):
-    media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mime, resumable=True)
+    media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mime, resumable=False)
     f = drive.files().create(
         body={"name": name, "parents": [parent]},
         media_body=media,
@@ -68,7 +68,7 @@ def download_bytes(file_id):
 
 def load_index():
     r = drive.files().list(
-        q=f"'{ROOT_FOLDER_ID}' in parents and name='reports.json'",
+        q=f"'{ROOT_FOLDER_ID}' in parents and name='reports.json' and trashed=false",
         fields="files(id)"
     ).execute()
 
@@ -118,10 +118,9 @@ def save_report():
 
     modality_folder = find_or_create_folder(p["modality"], ROOT_FOLDER_ID)
 
-    html_bytes = p["html"].encode("utf-8")
-    html_file_id = upload_bytes(
+    html_id = upload_bytes(
         f"{p['patient_name']}_{rid}.html",
-        html_bytes,
+        p["html"].encode("utf-8"),
         modality_folder
     )
 
@@ -129,10 +128,10 @@ def save_report():
     index.append({
         "id": rid,
         "patient_name": p["patient_name"],
-        "uhid": p["uhid"],
-        "date": p["date"],
+        "uhid": p.get("uhid",""),
+        "date": p.get("date",""),
         "modality": p["modality"],
-        "html_file_id": html_file_id
+        "html_file_id": html_id
     })
     save_index(index, fid)
 
@@ -183,7 +182,7 @@ def search_reports():
         out.append(r)
     return jsonify(out)
 
-# -------- LOAD INTO EDITOR --------
+# -------- LOAD REPORT INTO EDITOR --------
 
 @app.route("/api/load_report/<rid>")
 def load_report(rid):
@@ -191,16 +190,6 @@ def load_report(rid):
     r = next(x for x in index if x["id"] == rid)
     html = download_bytes(r["html_file_id"]).read().decode()
     return jsonify({"html": html})
-
-# -------- DOWNLOAD HTML --------
-
-@app.route("/api/download_html/<rid>")
-def download_html(rid):
-    index,_ = load_index()
-    r = next(x for x in index if x["id"] == rid)
-    fh = download_bytes(r["html_file_id"])
-    return send_file(fh, as_attachment=True,
-                     download_name=f"{r['patient_name']}.html")
 
 # -------- DOWNLOAD WORD --------
 
@@ -213,10 +202,33 @@ def download_word(rid):
     return send_file(buf, as_attachment=True,
                      download_name=f"{r['patient_name']}.docx")
 
+# ================= TEMPLATES (DRIVE) =================
+
+def templates_root():
+    return find_or_create_folder("Templates", ROOT_FOLDER_ID)
+
+@app.route("/api/templates/<modality>")
+def list_templates(modality):
+    root = templates_root()
+    folder = find_or_create_folder(modality, root)
+
+    files = drive.files().list(
+        q=f"'{folder}' in parents and trashed=false",
+        fields="files(id,name)"
+    ).execute().get("files", [])
+
+    return jsonify(files)
+
+@app.route("/api/load_template/<template_id>")
+def load_template(template_id):
+    html = download_bytes(template_id).read().decode("utf-8")
+    return jsonify({"html": html})
+
 # ================= RUN =================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
