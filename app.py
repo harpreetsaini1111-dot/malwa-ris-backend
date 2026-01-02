@@ -1,182 +1,112 @@
-import io
+  import io
+import json
+import datetime
 from flask import Flask, request, jsonify, render_template
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from docx import Document
-from bs4 import BeautifulSoup
 
-from drive import get_drive_service
+from storage import get_bucket
 
 app = Flask(__name__)
 
-# ===== DRIVE ROOT IDS =====
-TEMPLATES_ROOT_ID = "1Pv6AQsCyDZZciUnnLCJAgaiISd9Qdpwa"
-REPORTS_ROOT_ID   = "14MQZDL9DP7BZF45MbRIlKsReVJ5CSJV3"
-
-MONTHS = {
-    "01": "01_January", "02": "02_February", "03": "03_March",
-    "04": "04_April", "05": "05_May", "06": "06_June",
-    "07": "07_July", "08": "08_August", "09": "09_September",
-    "10": "10_October", "11": "11_November", "12": "12_December"
-}
-
-# ---------- HELPERS ----------
-
-def get_or_create_folder(service, name, parent_id):
-    q = (
-        f"'{parent_id}' in parents and "
-        f"name='{name}' and "
-        f"mimeType='application/vnd.google-apps.folder' and trashed=false"
-    )
-    res = service.files().list(q=q, fields="files(id)").execute()
-    files = res.get("files", [])
-    if files:
-        return files[0]["id"]
-
-    folder = service.files().create(
-        body={
-            "name": name,
-            "mimeType": "application/vnd.google-apps.folder",
-            "parents": [parent_id]
-        },
-        fields="id"
-    ).execute()
-
-    return folder["id"]
-
-def html_to_docx(html, patient, title):
-    doc = Document()
-    doc.add_heading(title, 1)
-
-    p = doc.add_paragraph()
-    p.add_run(f"Patient: {patient['name']}   ")
-    p.add_run(f"Age/Sex: {patient['age']}/{patient['sex']}   ")
-    p.add_run(f"UHID: {patient['uhid']}\n")
-    p.add_run(f"Ref: {patient['ref']}   ")
-    p.add_run(f"Date: {patient['date']}")
-
-    doc.add_paragraph("")
-
-    soup = BeautifulSoup(html, "html.parser")
-    for el in soup.find_all(["h1", "h2", "h3", "p"]):
-        if el.name.startswith("h"):
-            doc.add_heading(el.get_text(), level=2)
-        else:
-            doc.add_paragraph(el.get_text())
-
-    return doc
-
-# ---------- ROUTES ----------
+# ---------------- HOME ----------------
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
-# ===== TEMPLATE APIs =====
+# ---------------- TEMPLATE APIs ----------------
 
-@app.route("/templates")
+@app.route("/templates", methods=["GET"])
 def list_templates():
     modality = request.args.get("modality")
-    service = get_drive_service()
+    bucket = get_bucket()
 
-    folder_id = get_or_create_folder(service, modality, TEMPLATES_ROOT_ID)
-    q = f"'{folder_id}' in parents and trashed=false"
+    blobs = bucket.list_blobs(prefix=f"templates/{modality}/")
+    out = []
 
-    res = service.files().list(
-        q=q, fields="files(id,name,mimeType)"
-    ).execute()
+    for b in blobs:
+        if b.name.endswith(".html"):
+            out.append({
+                "id": b.name,
+                "name": b.name.split("/")[-1]
+            })
 
-    files = [
-        {"id": f["id"], "name": f["name"]}
-        for f in res.get("files", [])
-        if f["mimeType"] != "application/vnd.google-apps.folder"
-    ]
+    return jsonify(out)
 
-    return jsonify(files)
-
-@app.route("/templates/<file_id>")
-def load_template(file_id):
-    service = get_drive_service()
-    req = service.files().get_media(fileId=file_id)
-
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, req)
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
-
-    return jsonify({"html": fh.getvalue().decode("utf-8")})
+@app.route("/templates/<path:blob_name>")
+def load_template(blob_name):
+    bucket = get_bucket()
+    blob = bucket.blob(blob_name)
+    return jsonify({"html": blob.download_as_text()})
 
 @app.route("/templates/save", methods=["POST"])
 def save_template():
     data = request.json
-    service = get_drive_service()
+    bucket = get_bucket()
 
-    folder_id = get_or_create_folder(service, data["modality"], TEMPLATES_ROOT_ID)
+    path = f"templates/{data['modality']}/{data['name']}"
+    blob = bucket.blob(path)
 
-    media = MediaIoBaseUpload(
-        io.BytesIO(data["html"].encode("utf-8")),
-        mimetype="text/html",
-        resumable=False
+    blob.upload_from_string(
+        data["html"],
+        content_type="text/html"
     )
 
-    service.files().create(
-        body={
-            "name": data["name"],
-            "parents": [folder_id]
-        },
-        media_body=media
-    ).execute()
+    return jsonify({"status": "ok"})
 
-    return jsonify({"status": "saved"})
-
-# ===== REPORT API =====
+# ---------------- REPORT API ----------------
 
 @app.route("/reports/save", methods=["POST"])
 def save_report():
     data = request.json
-    service = get_drive_service()
-
-    modality = data["modality"]
     patient = data["patient"]
-    html = data["final_html"]
 
-    modality_id = get_or_create_folder(service, modality, REPORTS_ROOT_ID)
-    year_id = get_or_create_folder(service, patient["date"][:4], modality_id)
-    month_id = get_or_create_folder(
-        service,
-        MONTHS[patient["date"][5:7]],
-        year_id
+    # Create DOCX
+    doc = Document()
+    doc.add_heading("Radiology Report", level=1)
+
+    doc.add_paragraph(
+        f"Name: {patient['name']}    "
+        f"Age/Sex: {patient['age']}/{patient['sex']}    "
+        f"UHID: {patient['uhid']}\n"
+        f"Ref: {patient['ref']}    "
+        f"Date: {patient['date']}"
     )
 
-    patient_folder = f"{patient['uhid']}_{patient['name'].replace(' ', '_')}"
-    patient_id = get_or_create_folder(service, patient_folder, month_id)
+    doc.add_paragraph("\n")
+    doc.add_paragraph(data["final_html"])
 
-    doc = html_to_docx(html, patient, f"{modality} Report")
     bio = io.BytesIO()
     doc.save(bio)
     bio.seek(0)
 
-    media = MediaIoBaseUpload(
+    # Upload to GCS
+    today = datetime.date.today()
+    filename = f"{patient['name']}_{today}.docx"
+
+    path = f"reports/{today.year}/{today.month}/{filename}"
+
+    bucket = get_bucket()
+    blob = bucket.blob(path)
+
+    blob.upload_from_file(
         bio,
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        resumable=False
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-    file = service.files().create(
-        body={
-            "name": f"{modality}_{patient['date']}.docx",
-            "parents": [patient_id]
-        },
-        media_body=media,
-        fields="webViewLink"
-    ).execute()
+    return jsonify({
+        "status": "ok",
+        "path": path
+    })
 
-    return jsonify({"status": "saved", "link": file["webViewLink"]})
+# ---------------- TEST ----------------
 
-# ---------- RUN ----------
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+@app.route("/test-gcs")
+def test_gcs():
+    bucket = get_bucket()
+    blob = bucket.blob("test/hello.txt")
+    blob.upload_from_string("GCS working")
+    return jsonify({"status": "ok"})
 
 
 
