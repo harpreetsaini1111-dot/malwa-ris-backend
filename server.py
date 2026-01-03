@@ -1,158 +1,53 @@
 import os
 import io
-import datetime
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google.cloud import storage
-from docx import Document
 
-# ---------------- APP ----------------
+from google.cloud import storage
 
 app = Flask(__name__)
 CORS(app)
 
-# ---------------- HEALTH ----------------
+# ---------- GCS SETUP ----------
+BUCKET_NAME = os.environ.get("GCS_BUCKET")
 
+client = storage.Client()  # uses GOOGLE_APPLICATION_CREDENTIALS automatically
+bucket = client.bucket(BUCKET_NAME)
+
+# ---------- HEALTH ----------
 @app.route("/health")
 def health():
-    return "OK"
+    return "OK", 200
 
-# ---------------- GCS DEBUG TEST ----------------
-
-@app.route("/test-gcs")
-def test_gcs():
-    try:
-        creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        bucket_name = os.environ.get("GCS_BUCKET")
-
-        if not creds:
-            return jsonify({"error": "GOOGLE_APPLICATION_CREDENTIALS not set"}), 500
-        if not os.path.exists(creds):
-            return jsonify({
-                "error": "credentials file not found",
-                "path": creds
-            }), 500
-        if not bucket_name:
-            return jsonify({"error": "GCS_BUCKET not set"}), 500
-
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
-
-        blob = bucket.blob("test/hello.txt")
-        blob.upload_from_string("GCS working")
-
-        return jsonify({
-            "status": "ok",
-            "bucket": bucket_name,
-            "credentials_path": creds
-        })
-
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "type": type(e).__name__
-        }), 500
-
-# ---------------- TEMPLATE APIs ----------------
-
-@app.route("/templates", methods=["GET"])
-def list_templates():
-    modality = request.args.get("modality")
-    bucket_name = os.environ.get("GCS_BUCKET")
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-
-    blobs = bucket.list_blobs(prefix=f"templates/{modality}/")
-    out = []
-
-    for b in blobs:
-        if b.name.endswith(".html"):
-            out.append({
-                "id": b.name,
-                "name": b.name.split("/")[-1]
-            })
-
-    return jsonify(out)
-
-@app.route("/templates/<path:blob_name>", methods=["GET"])
-def load_template(blob_name):
-    bucket_name = os.environ.get("GCS_BUCKET")
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-
-    return Response(
-        blob.download_as_text(),
-        mimetype="text/html"
-    )
-
-@app.route("/templates/save", methods=["POST"])
-def save_template():
-    data = request.json
-    bucket_name = os.environ.get("GCS_BUCKET")
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-
-    path = f"templates/{data['modality']}/{data['name']}"
-
-    blob = bucket.blob(path)
-    blob.upload_from_string(
-        data["html"],
-        content_type="text/html"
-    )
-
-    return jsonify({"status": "ok", "path": path})
-
-# ---------------- REPORT API ----------------
-
-@app.route("/reports/save", methods=["POST"])
+# ---------- SAVE REPORT ----------
+@app.route("/save_report", methods=["POST"])
 def save_report():
     data = request.json
-    patient = data["patient"]
-    html = data["html"]
+    filename = data["filename"]
+    content = data["content"]
 
-    doc = Document()
-    doc.add_heading("Radiology Report", level=1)
+    blob = bucket.blob(f"reports/{filename}")
+    blob.upload_from_string(content, content_type="text/plain")
 
-    doc.add_paragraph(
-        f"Name: {patient.get('name','')}    "
-        f"Age/Sex: {patient.get('age','')}/{patient.get('sex','')}    "
-        f"UHID: {patient.get('uhid','')}\n"
-        f"Ref: {patient.get('ref','')}    "
-        f"Date: {patient.get('date','')}"
-    )
+    return jsonify({"status": "saved", "file": filename})
 
-    doc.add_paragraph("")
-    doc.add_paragraph(html)
+# ---------- LOAD REPORT ----------
+@app.route("/load_report", methods=["GET"])
+def load_report():
+    filename = request.args.get("filename")
+    blob = bucket.blob(f"reports/{filename}")
 
-    bio = io.BytesIO()
-    doc.save(bio)
-    bio.seek(0)
+    if not blob.exists():
+        return jsonify({"error": "file not found"}), 404
 
-    today = datetime.date.today()
-    filename = f"{patient.get('name','REPORT')}_{today}.docx"
+    content = blob.download_as_text()
+    return jsonify({"content": content})
 
-    path = f"reports/{today.year}/{today.month}/{filename}"
-
-    bucket_name = os.environ.get("GCS_BUCKET")
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(path)
-
-    blob.upload_from_file(
-        bio,
-        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-
-    return jsonify({"status": "ok", "path": path})
-
-# ---------------- MAIN ----------------
-
+# ---------- RUN ----------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
 
 
 
