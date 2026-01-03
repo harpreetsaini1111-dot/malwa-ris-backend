@@ -2,118 +2,87 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Malwa RIS</title>
+<title>Malwa RIS – Test</title>
+
 <style>
-body{font-family:Arial;background:#f4f6fb;padding:20px}
-.bar{background:#fff;padding:10px;margin-bottom:10px;border-radius:6px}
-textarea{width:100%;height:350px}
-button{padding:8px 14px;border:none;border-radius:5px;color:#fff}
-.t{background:#2563eb}
-.r{background:#16a34a}
+body{
+    font-family:Segoe UI, Arial;
+    background:#f4f6fb;
+    padding:20px
+}
+.box{
+    background:#fff;
+    padding:15px;
+    border-radius:8px;
+    max-width:700px
+}
+textarea{
+    width:100%;
+    height:200px;
+    font-family:Consolas, monospace
+}
+button{
+    margin-top:10px;
+    padding:10px 16px;
+    background:#2563eb;
+    border:none;
+    color:#fff;
+    border-radius:6px;
+    cursor:pointer
+}
 </style>
 </head>
 
 <body>
 
-<h2>Malwa Diagnostic Imaging – RIS</h2>
+<h2>Malwa RIS – Backend Test</h2>
 
-<div class="bar">
-Mode:
-<select id="mode">
-<option value="template">Template</option>
-<option value="report">Report</option>
-</select>
+<div class="box">
+    <label>Patient Name</label><br>
+    <input id="name"><br><br>
+
+    <label>Report Content</label>
+    <textarea id="editor">TEST REPORT CONTENT</textarea>
+
+    <button onclick="save()">Send to Server</button>
 </div>
 
-<div class="bar">
-Modality:
-<select id="modality" onchange="loadTemplates()">
-<option>USG</option>
-<option>CT</option>
-<option>MRI</option>
-<option>XRAY</option>
-</select>
-
-Template:
-<select id="templateList" onchange="loadTemplate()"></select>
-</div>
-
-<div class="bar" id="patient" style="display:none">
-Name <input id="name">
-Age <input id="age" size="3">
-Sex <input id="sex" size="2">
-UHID <input id="uhid">
-Ref <input id="ref">
-Date <input type="date" id="date">
-</div>
-
-<textarea id="editor"></textarea>
-
-<div class="bar">
-<button class="t" onclick="saveTemplate()">Save Template</button>
-<button class="r" onclick="saveReport()">Save Report</button>
-</div>
+<pre id="result"></pre>
 
 <script>
-function loadTemplates(){
-fetch(`/templates?modality=${modality.value}`)
-.then(r=>r.json())
-.then(d=>{
-templateList.innerHTML="";
-d.forEach(t=>{
-templateList.innerHTML+=`<option value="${t.id}">${t.name}</option>`
-})
-})
-}
+const API = "https://malwa-ris-backend.onrender.com";
 
-function loadTemplate(){
-fetch(`/${templateList.value}`)
-.then(r=>r.json())
-.then(d=>editor.value=d.html)
+function save(){
+    fetch(`${API}/reports/save`,{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({
+            modality:"XRAY",
+            patient:{
+                name: document.getElementById("name").value || "TEST",
+                age:"30",
+                sex:"M",
+                uhid:"123",
+                ref:"Dr Test",
+                date:"2026-01-03"
+            },
+            html: document.getElementById("editor").value
+        })
+    })
+    .then(r=>r.json())
+    .then(d=>{
+        document.getElementById("result").textContent =
+            JSON.stringify(d,null,2);
+    })
+    .catch(e=>{
+        document.getElementById("result").textContent =
+            "ERROR:\n"+e;
+    });
 }
-
-function saveTemplate(){
-if(mode.value!=="template")return alert("Template mode only");
-const name=prompt("Template name");
-if(!name)return;
-fetch("/templates/save",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-modality:modality.value,
-name:name+".html",
-html:editor.value
-})
-}).then(()=>alert("Template saved"));
-}
-
-function saveReport(){
-if(mode.value!=="report")return alert("Report mode only");
-fetch("/reports/save",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-modality:modality.value,
-patient:{
-name:name.value,
-age:age.value,
-sex:sex.value,
-uhid:uhid.value,
-ref:ref.value,
-date:date.value
-},
-final_html:editor.value
-})
-}).then(r=>r.json()).then(d=>{
-alert("Report saved\n"+d.path)
-})
-}
-
-mode.onchange=()=>patient.style.display=
-mode.value==="report"?"block":"none";
 </script>
 
 </body>
 </html>
+
 
 
