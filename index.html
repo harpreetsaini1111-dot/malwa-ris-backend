@@ -1,120 +1,75 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Malwa RIS – Test Editor</title>
+<title>Malwa RIS</title>
 
 <style>
-body{
-    font-family: Segoe UI, Arial, sans-serif;
-    background:#f4f6fb;
-    padding:20px;
-}
-.container{
-    background:#fff;
-    padding:20px;
-    border-radius:8px;
-    max-width:800px;
-    margin:auto;
-}
-label{
-    font-weight:600;
-}
-input, textarea{
-    width:100%;
-    padding:8px;
-    margin-top:4px;
-    margin-bottom:12px;
-    font-family:Consolas, monospace;
-}
-textarea{
-    height:240px;
-}
-button{
-    padding:10px 18px;
-    background:#2563eb;
-    border:none;
-    color:#fff;
-    border-radius:6px;
-    cursor:pointer;
-    margin-right:10px;
-}
-button:hover{
-    background:#1e40af;
-}
-pre{
-    background:#0f172a;
-    color:#e5e7eb;
-    padding:12px;
-    border-radius:6px;
-    margin-top:15px;
-    white-space:pre-wrap;
-}
+body{font-family:Segoe UI,Arial;background:#f4f6fb;padding:20px}
+.box{background:#fff;padding:20px;border-radius:8px;max-width:800px}
+textarea{width:100%;height:240px;font-family:Consolas}
+select,input,button{padding:8px;margin-top:6px}
+button{background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer}
+pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:6px}
 </style>
 </head>
 
 <body>
 
-<h2>Malwa RIS – Backend Test</h2>
+<h2>Malwa RIS – Cloud Save Test</h2>
 
-<div class="container">
+<div class="box">
 
-    <label>Filename (example: test.txt)</label>
-    <input id="filename" value="test.txt">
+<label>Modality</label><br>
+<select id="modality">
+  <option>CT</option>
+  <option>MRI</option>
+  <option>USG</option>
+  <option>XRAY</option>
+</select><br><br>
 
-    <label>Report Content</label>
-    <textarea id="content">THIS IS A TEST REPORT</textarea>
+<label>Filename (example: brain_normal.html)</label><br>
+<input id="filename" value="test.html"><br><br>
 
-    <button onclick="saveReport()">Save to Server</button>
-    <button onclick="loadReport()">Load from Server</button>
+<label>Report / Template Content</label>
+<textarea id="content">TEST CONTENT</textarea><br>
 
-    <pre id="result">Waiting…</pre>
+<button onclick="saveReport()">Save REPORT</button>
+<button onclick="saveTemplate()">Save TEMPLATE</button>
+
+<pre id="result">Waiting…</pre>
+
 </div>
 
 <script>
 const API = "https://malwa-ris-backend.onrender.com";
 
 function saveReport(){
-    const filename = document.getElementById("filename").value;
-    const content = document.getElementById("content").value;
-
-    fetch(API + "/save_report", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            filename: filename,
-            content: content
-        })
+  fetch(API + "/save_report",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      modality: modality.value,
+      filename: filename.value,
+      content: content.value
     })
-    .then(res => res.json())
-    .then(data => {
-        document.getElementById("result").textContent =
-            "SAVE RESPONSE:\n" + JSON.stringify(data, null, 2);
-    })
-    .catch(err => {
-        document.getElementById("result").textContent =
-            "ERROR:\n" + err;
-    });
+  })
+  .then(r=>r.json())
+  .then(d=>result.textContent = JSON.stringify(d,null,2))
 }
 
-function loadReport(){
-    const filename = document.getElementById("filename").value;
-
-    fetch(API + "/load_report?filename=" + encodeURIComponent(filename))
-    .then(res => res.json())
-    .then(data => {
-        if(data.content){
-            document.getElementById("content").value = data.content;
-        }
-        document.getElementById("result").textContent =
-            "LOAD RESPONSE:\n" + JSON.stringify(data, null, 2);
+function saveTemplate(){
+  fetch(API + "/save_template",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      modality: modality.value,
+      filename: filename.value,
+      content: content.value
     })
-    .catch(err => {
-        document.getElementById("result").textContent =
-            "ERROR:\n" + err;
-    });
+  })
+  .then(r=>r.json())
+  .then(d=>result.textContent = JSON.stringify(d,null,2))
 }
 </script>
 
