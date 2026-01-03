@@ -1,13 +1,15 @@
+import os
 import io
 import datetime
-from flask import Flask, request, jsonify, Response, render_template
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
+from google.cloud import storage
 from docx import Document
 
-from storage import get_bucket   # your existing GCS helper
+# ---------------- APP ----------------
 
 app = Flask(__name__)
-CORS(app)   # 🔴 REQUIRED for browser → Render calls
+CORS(app)
 
 # ---------------- HEALTH ----------------
 
@@ -15,18 +17,51 @@ CORS(app)   # 🔴 REQUIRED for browser → Render calls
 def health():
     return "OK"
 
-# ---------------- HOME ----------------
+# ---------------- GCS DEBUG TEST ----------------
 
-@app.route("/")
-def index():
-    return "Malwa RIS Backend Running"
+@app.route("/test-gcs")
+def test_gcs():
+    try:
+        creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        bucket_name = os.environ.get("GCS_BUCKET")
+
+        if not creds:
+            return jsonify({"error": "GOOGLE_APPLICATION_CREDENTIALS not set"}), 500
+        if not os.path.exists(creds):
+            return jsonify({
+                "error": "credentials file not found",
+                "path": creds
+            }), 500
+        if not bucket_name:
+            return jsonify({"error": "GCS_BUCKET not set"}), 500
+
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+
+        blob = bucket.blob("test/hello.txt")
+        blob.upload_from_string("GCS working")
+
+        return jsonify({
+            "status": "ok",
+            "bucket": bucket_name,
+            "credentials_path": creds
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
 
 # ---------------- TEMPLATE APIs ----------------
 
 @app.route("/templates", methods=["GET"])
 def list_templates():
     modality = request.args.get("modality")
-    bucket = get_bucket()
+    bucket_name = os.environ.get("GCS_BUCKET")
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
 
     blobs = bucket.list_blobs(prefix=f"templates/{modality}/")
     out = []
@@ -42,7 +77,10 @@ def list_templates():
 
 @app.route("/templates/<path:blob_name>", methods=["GET"])
 def load_template(blob_name):
-    bucket = get_bucket()
+    bucket_name = os.environ.get("GCS_BUCKET")
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
 
     return Response(
@@ -53,7 +91,10 @@ def load_template(blob_name):
 @app.route("/templates/save", methods=["POST"])
 def save_template():
     data = request.json
-    bucket = get_bucket()
+    bucket_name = os.environ.get("GCS_BUCKET")
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
 
     path = f"templates/{data['modality']}/{data['name']}"
 
@@ -73,7 +114,6 @@ def save_report():
     patient = data["patient"]
     html = data["html"]
 
-    # Create DOCX
     doc = Document()
     doc.add_heading("Radiology Report", level=1)
 
@@ -97,7 +137,9 @@ def save_report():
 
     path = f"reports/{today.year}/{today.month}/{filename}"
 
-    bucket = get_bucket()
+    bucket_name = os.environ.get("GCS_BUCKET")
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
     blob = bucket.blob(path)
 
     blob.upload_from_file(
@@ -105,19 +147,7 @@ def save_report():
         content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-    return jsonify({
-        "status": "ok",
-        "path": path
-    })
-
-# ---------------- GCS TEST ----------------
-
-@app.route("/test-gcs")
-def test_gcs():
-    bucket = get_bucket()
-    blob = bucket.blob("test/hello.txt")
-    blob.upload_from_string("GCS working")
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "path": path})
 
 # ---------------- MAIN ----------------
 
