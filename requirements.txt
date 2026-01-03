@@ -1,8 +1,6 @@
 flask
 gunicorn
-google-api-python-client
-google-auth
-google-auth-httplib2
+flask-cors
+google-cloud-storage
 python-docx
 beautifulsoup4
-google-cloud-storage
