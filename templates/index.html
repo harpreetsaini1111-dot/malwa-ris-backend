@@ -1,34 +1,54 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Malwa RIS – Test</title>
+<title>Malwa RIS – Test Editor</title>
 
 <style>
 body{
-    font-family:Segoe UI, Arial;
+    font-family: Segoe UI, Arial, sans-serif;
     background:#f4f6fb;
-    padding:20px
+    padding:20px;
 }
-.box{
+.container{
     background:#fff;
-    padding:15px;
+    padding:20px;
     border-radius:8px;
-    max-width:700px
+    max-width:800px;
+    margin:auto;
+}
+label{
+    font-weight:600;
+}
+input, textarea{
+    width:100%;
+    padding:8px;
+    margin-top:4px;
+    margin-bottom:12px;
+    font-family:Consolas, monospace;
 }
 textarea{
-    width:100%;
-    height:200px;
-    font-family:Consolas, monospace
+    height:240px;
 }
 button{
-    margin-top:10px;
-    padding:10px 16px;
+    padding:10px 18px;
     background:#2563eb;
     border:none;
     color:#fff;
     border-radius:6px;
-    cursor:pointer
+    cursor:pointer;
+    margin-right:10px;
+}
+button:hover{
+    background:#1e40af;
+}
+pre{
+    background:#0f172a;
+    color:#e5e7eb;
+    padding:12px;
+    border-radius:6px;
+    margin-top:15px;
+    white-space:pre-wrap;
 }
 </style>
 </head>
@@ -37,52 +57,70 @@ button{
 
 <h2>Malwa RIS – Backend Test</h2>
 
-<div class="box">
-    <label>Patient Name</label><br>
-    <input id="name"><br><br>
+<div class="container">
+
+    <label>Filename (example: test.txt)</label>
+    <input id="filename" value="test.txt">
 
     <label>Report Content</label>
-    <textarea id="editor">TEST REPORT CONTENT</textarea>
+    <textarea id="content">THIS IS A TEST REPORT</textarea>
 
-    <button onclick="save()">Send to Server</button>
+    <button onclick="saveReport()">Save to Server</button>
+    <button onclick="loadReport()">Load from Server</button>
+
+    <pre id="result">Waiting…</pre>
 </div>
-
-<pre id="result"></pre>
 
 <script>
 const API = "https://malwa-ris-backend.onrender.com";
 
-function save(){
-    fetch(`${API}/reports/save`,{
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body:JSON.stringify({
-            modality:"XRAY",
-            patient:{
-                name: document.getElementById("name").value || "TEST",
-                age:"30",
-                sex:"M",
-                uhid:"123",
-                ref:"Dr Test",
-                date:"2026-01-03"
-            },
-            html: document.getElementById("editor").value
+function saveReport(){
+    const filename = document.getElementById("filename").value;
+    const content = document.getElementById("content").value;
+
+    fetch(API + "/save_report", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            filename: filename,
+            content: content
         })
     })
-    .then(r=>r.json())
-    .then(d=>{
+    .then(res => res.json())
+    .then(data => {
         document.getElementById("result").textContent =
-            JSON.stringify(d,null,2);
+            "SAVE RESPONSE:\n" + JSON.stringify(data, null, 2);
     })
-    .catch(e=>{
+    .catch(err => {
         document.getElementById("result").textContent =
-            "ERROR:\n"+e;
+            "ERROR:\n" + err;
+    });
+}
+
+function loadReport(){
+    const filename = document.getElementById("filename").value;
+
+    fetch(API + "/load_report?filename=" + encodeURIComponent(filename))
+    .then(res => res.json())
+    .then(data => {
+        if(data.content){
+            document.getElementById("content").value = data.content;
+        }
+        document.getElementById("result").textContent =
+            "LOAD RESPONSE:\n" + JSON.stringify(data, null, 2);
+    })
+    .catch(err => {
+        document.getElementById("result").textContent =
+            "ERROR:\n" + err;
     });
 }
 </script>
 
 </body>
 </html>
+
 
 
 
