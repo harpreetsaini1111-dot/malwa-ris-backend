@@ -14,6 +14,11 @@ BUCKET_NAME = os.environ.get("GCS_BUCKET")
 client = storage.Client()  # uses GOOGLE_APPLICATION_CREDENTIALS automatically
 bucket = client.bucket(BUCKET_NAME)
 
+# ---------- ROOT (IMPORTANT) ----------
+@app.route("/")
+def home():
+    return "SERVER RUNNING", 200
+
 # ---------- HEALTH ----------
 @app.route("/health")
 def health():
@@ -22,9 +27,13 @@ def health():
 # ---------- SAVE REPORT ----------
 @app.route("/save_report", methods=["POST"])
 def save_report():
-    data = request.json
-    filename = data["filename"]
-    content = data["content"]
+    data = request.get_json(force=True)
+
+    filename = data.get("filename")
+    content = data.get("content")
+
+    if not filename or not content:
+        return jsonify({"error": "filename and content required"}), 400
 
     blob = bucket.blob(f"reports/{filename}")
     blob.upload_from_string(content, content_type="text/plain")
@@ -35,6 +44,10 @@ def save_report():
 @app.route("/load_report", methods=["GET"])
 def load_report():
     filename = request.args.get("filename")
+
+    if not filename:
+        return jsonify({"error": "filename required"}), 400
+
     blob = bucket.blob(f"reports/{filename}")
 
     if not blob.exists():
@@ -47,6 +60,7 @@ def load_report():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
