@@ -1,18 +1,25 @@
 import io
-import json
 import datetime
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, Response, render_template
+from flask_cors import CORS
 from docx import Document
 
-from storage import get_bucket
+from storage import get_bucket   # your existing GCS helper
 
 app = Flask(__name__)
+CORS(app)   # 🔴 REQUIRED for browser → Render calls
+
+# ---------------- HEALTH ----------------
+
+@app.route("/health")
+def health():
+    return "OK"
 
 # ---------------- HOME ----------------
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return "Malwa RIS Backend Running"
 
 # ---------------- TEMPLATE APIs ----------------
 
@@ -33,11 +40,15 @@ def list_templates():
 
     return jsonify(out)
 
-@app.route("/templates/<path:blob_name>")
+@app.route("/templates/<path:blob_name>", methods=["GET"])
 def load_template(blob_name):
     bucket = get_bucket()
     blob = bucket.blob(blob_name)
-    return jsonify({"html": blob.download_as_text()})
+
+    return Response(
+        blob.download_as_text(),
+        mimetype="text/html"
+    )
 
 @app.route("/templates/save", methods=["POST"])
 def save_template():
@@ -45,14 +56,14 @@ def save_template():
     bucket = get_bucket()
 
     path = f"templates/{data['modality']}/{data['name']}"
-    blob = bucket.blob(path)
 
+    blob = bucket.blob(path)
     blob.upload_from_string(
         data["html"],
         content_type="text/html"
     )
 
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "path": path})
 
 # ---------------- REPORT API ----------------
 
@@ -60,29 +71,29 @@ def save_template():
 def save_report():
     data = request.json
     patient = data["patient"]
+    html = data["html"]
 
     # Create DOCX
     doc = Document()
     doc.add_heading("Radiology Report", level=1)
 
     doc.add_paragraph(
-        f"Name: {patient['name']}    "
-        f"Age/Sex: {patient['age']}/{patient['sex']}    "
-        f"UHID: {patient['uhid']}\n"
-        f"Ref: {patient['ref']}    "
-        f"Date: {patient['date']}"
+        f"Name: {patient.get('name','')}    "
+        f"Age/Sex: {patient.get('age','')}/{patient.get('sex','')}    "
+        f"UHID: {patient.get('uhid','')}\n"
+        f"Ref: {patient.get('ref','')}    "
+        f"Date: {patient.get('date','')}"
     )
 
-    doc.add_paragraph("\n")
-    doc.add_paragraph(data["final_html"])
+    doc.add_paragraph("")
+    doc.add_paragraph(html)
 
     bio = io.BytesIO()
     doc.save(bio)
     bio.seek(0)
 
-    # Upload to GCS
     today = datetime.date.today()
-    filename = f"{patient['name']}_{today}.docx"
+    filename = f"{patient.get('name','REPORT')}_{today}.docx"
 
     path = f"reports/{today.year}/{today.month}/{filename}"
 
@@ -99,7 +110,7 @@ def save_report():
         "path": path
     })
 
-# ---------------- TEST ----------------
+# ---------------- GCS TEST ----------------
 
 @app.route("/test-gcs")
 def test_gcs():
@@ -108,8 +119,11 @@ def test_gcs():
     blob.upload_from_string("GCS working")
     return jsonify({"status": "ok"})
 
+# ---------------- MAIN ----------------
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
 
 
 
