@@ -66,20 +66,21 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 
 <div class="box">
 
-<!-- REPORT METADATA -->
 <h3>Report Details</h3>
 <div class="top-row">
   <div class="field small">
     <label>Modality</label>
-    <select id="reportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+    <select id="reportModality">
+      <option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option>
+    </select>
   </div>
   <div class="field large">
     <label>Patient Name</label>
-    <input id="patientName" placeholder="Patient name">
+    <input id="patientName">
   </div>
   <div class="field medium">
     <label>Patient ID</label>
-    <input id="patientId" placeholder="UHID / ID">
+    <input id="patientId">
   </div>
   <div class="field medium">
     <label>Date</label>
@@ -89,64 +90,45 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 
 <br>
 
-<!-- TEMPLATE METADATA -->
 <h3>Template Details</h3>
 <div class="top-row">
   <div class="field small">
     <label>Template Modality</label>
-    <select id="templateModality" onchange="loadTemplateList()"><option value="">–</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+    <select id="templateModality" onchange="loadTemplateList()">
+      <option value="">–</option>
+      <option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option>
+    </select>
   </div>
   <div class="field large">
     <label>Template</label>
-    <select id="templateList" onchange="loadTemplate()"><option value="">Select template</option></select>
+    <select id="templateList" onchange="loadTemplate()">
+      <option value="">Select template</option>
+    </select>
   </div>
 </div>
 
-<!-- BATCH TEMPLATE UPLOAD -->
 <br>
-<h4>Batch Upload Templates (DOCX / HTML)</h4>
+
+<h4>Batch Upload Templates</h4>
 <div class="top-row">
   <div class="field large">
-    <label>Select Multiple Files</label>
     <input type="file" id="batchTemplates" multiple accept=".docx,.html">
   </div>
 </div>
 <br>
-<button class="btn-template" onclick="batchUploadTemplates()">Upload Templates to Modality</button>
+<button class="btn-template" onclick="batchUploadTemplates()">Upload Templates</button>
 
-<br>
+<br><br>
 
-<label>Report / Template Content</label>
-<div class="top-row" style="margin-bottom:8px">
-  <select onchange="setFont(this.value)">
-    <option value="">Font</option>
-    <option value="Arial">Arial</option>
-    <option value="Arial Black">Arial Black</option>
-    <option value="Calibri">Calibri</option>
-    <option value="Cambria">Cambria</option>
-    <option value="Candara">Candara</option>
-    <option value="Comic Sans MS">Comic Sans MS</option>
-    <option value="Courier New">Courier New</option>
-    <option value="Georgia">Georgia</option>
-    <option value="Helvetica">Helvetica</option>
-    <option value="Impact">Impact</option>
-    <option value="Lucida Console">Lucida Console</option>
-    <option value="Lucida Sans Unicode">Lucida Sans Unicode</option>
-    <option value="Segoe UI">Segoe UI</option>
-    <option value="Tahoma">Tahoma</option>
-    <option value="Times New Roman">Times New Roman</option>
-    <option value="Trebuchet MS">Trebuchet MS</option>
-    <option value="Verdana">Verdana</option>
-  </select>
-  <select onchange="setFontSize(this.value)"><option value="">Size</option><option value="2">Small</option><option value="3">Normal</option><option value="4">Large</option><option value="5">XL</option></select>
+<label>Editor</label>
+<div class="top-row">
   <button onclick="cmd('bold')"><b>B</b></button>
   <button onclick="cmd('italic')"><i>I</i></button>
   <button onclick="cmd('underline')"><u>U</u></button>
-  <button onclick="cmd('insertUnorderedList')">• Bullets</button>
-  <button onclick="cmd('insertOrderedList')">1. List</button>
-  <button onclick="downloadFromEditor('docx')">Download DOCX</button>
-  <button onclick="downloadFromEditor('pdf')">Download PDF</button>
+  <button onclick="cmd('insertUnorderedList')">•</button>
+  <button onclick="cmd('insertOrderedList')">1.</button>
 </div>
+
 <div id="content" contenteditable="true"></div>
 
 <br>
@@ -157,20 +139,16 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 </div>
 
 <hr>
-<hr>
-<h3>Batch Upload Reports from PC (Different Patients)</h3>
-<p style="font-size:13px;color:#475569">
-Upload multiple <b>.docx / .html</b> files. Each file is treated as a separate patient.<br>
-<b>Patient data is auto‑extracted from the filename</b>. No manual entry required.<br>
-<b>Expected filename format:</b> <code>PatientName_PatientID_YYYYMMDD.(docx|html)</code>
-</p>
+
+<h3>Batch Upload Reports (Different Patients)</h3>
 <div class="top-row">
   <div class="field small">
-    <label>Save Under Modality</label>
-    <select id="uploadReportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+    <label>Modality</label>
+    <select id="uploadReportModality">
+      <option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option>
+    </select>
   </div>
   <div class="field large">
-    <label>Select Report Files</label>
     <input type="file" id="uploadReportFile" multiple accept=".docx,.html">
   </div>
 </div>
@@ -178,184 +156,94 @@ Upload multiple <b>.docx / .html</b> files. Each file is treated as a separate p
 <button class="btn-report" onclick="batchUploadReportsDifferentPatients()">Upload Reports</button>
 
 <hr>
-<h3>Fetch Reports</h3>
-<div class="top-row">
-  <div class="field small"><label>Modality</label><select id="fetchModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select></div>
-  <div class="field large"><label>Patient Name</label><input id="fetchName"></div>
-  <div class="field medium"><label>Date</label><input id="fetchDate" type="date"></div>
-</div>
-<br>
-<button class="btn-report" onclick="fetchReports()">Fetch Reports</button>
-<div id="reportList"></div>
 
 <pre id="result">Ready</pre>
 
 </div>
 
 <script>
+console.log("JS LOADED");
+
 const API = "https://malwa-ris-backend.onrender.com";
 
-function cmd(c){document.execCommand(c,false,null)}
-function setFont(f){if(f) document.execCommand('fontName',false,f)}
-function setFontSize(s){if(s) document.execCommand('fontSize',false,s)}
-
-function downloadFromEditor(type){
-  fetch(API+`/export_${type}`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({html:content.innerHTML})
-  })
-  .then(r=>r.blob())
-  .then(b=>{
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(b);
-    a.download=`report.${type}`;
-    a.click();
-  })
+function cmd(c){
+  document.execCommand(c,false,null);
 }
-
-function fetchReports(){
-  fetch(API+`/list_reports?modality=${fetchModality.value}&name=${fetchName.value}&date=${fetchDate.value}`)
-  .then(r=>r.json())
-  .then(d=>{
-    reportList.innerHTML = d.reports?.length ? '<ul>' + d.reports.map(r=>
-      `<li>${r.filename} 
-      <button onclick=\"downloadReport('${r.path}','docx')\">DOCX</button>
-      <button onclick=\"downloadReport('${r.path}','pdf')\">PDF</button>
-      </li>`).join('') + '</ul>' : 'No reports found';
-  })
-}
-
-function downloadReport(path,type){
-  fetch(API+`/download_report?path=${encodeURIComponent(path)}&type=${type}`)
-  .then(r=>r.blob())
-  .then(b=>{
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(b);
-    a.download=`report.${type}`;
-    a.click();
-  })
-}
-
-
-function safe(v){return v.replace(/[^a-z0-9_-]/gi,'_')}
 
 function saveReport(){
-  if(!patientName.value || !patientId.value || !reportDate.value){
-    alert("Patient name, ID, and date are required");
-    return;
-  }
-
-  fetch(API+'/save_report',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
+  fetch(API + "/save_report",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
-      modality: reportModality.value,
-      patient_name: patientName.value,
-      patient_id: patientId.value,
-      date: reportDate.value,
-      content: content.innerHTML
+      modality:reportModality.value,
+      patient_name:patientName.value,
+      patient_id:patientId.value,
+      date:reportDate.value,
+      content:content.innerHTML
     })
-  }).then(r=>r.json()).then(d=>result.textContent=JSON.stringify(d,null,2));
+  })
+  .then(r=>r.json())
+  .then(d=>result.textContent=JSON.stringify(d,null,2))
+  .catch(e=>result.textContent=e.message);
 }
 
 function saveTemplate(){
-  if(!templateModality.value){
-    alert("Select template modality");
-    return;
-  }
-
-  fetch(API+'/save_template',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
+  fetch(API + "/save_template",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
-      modality: templateModality.value,
-      content: content.innerHTML
+      modality:templateModality.value,
+      content:content.innerHTML
     })
-  }).then(r=>r.json()).then(d=>result.textContent=JSON.stringify(d,null,2));
+  })
+  .then(r=>r.json())
+  .then(d=>result.textContent=JSON.stringify(d,null,2))
+  .catch(e=>result.textContent=e.message);
 }
 
 function loadTemplateList(){
-  if(!templateModality.value) return;
-  fetch(API+`/list_templates?modality=${templateModality.value}`)
+  fetch(API + "/list_templates?modality="+templateModality.value)
   .then(r=>r.json())
   .then(d=>{
     templateList.innerHTML='<option value="">Select template</option>';
     (d.templates||[]).forEach(t=>{
-      let o=document.createElement('option');
-      o.value=t;o.textContent=t;templateList.appendChild(o);
+      let o=document.createElement("option");
+      o.value=t;
+      o.textContent=t;
+      templateList.appendChild(o);
     });
   });
 }
 
 function loadTemplate(){
-  if(!templateList.value) return;
-  fetch(API+`/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
+  fetch(API + `/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
   .then(r=>r.json())
-  .then(d=>content.innerHTML=d.content||'');
-}
-
-function uploadWord(){
-  const f = wordFile?.files?.[0];
-  if(!f) return alert('Select a file');
+  .then(d=>content.innerHTML=d.content||"");
 }
 
 function batchUploadTemplates(){
-  if(!templateModality.value){
-    alert('Select Template Modality');
-    return;
-  }
+  const fd=new FormData();
+  fd.append("modality",templateModality.value);
+  for(const f of batchTemplates.files) fd.append("files",f);
 
-  const files = batchTemplates.files;
-  if(!files.length){
-    alert('Select one or more template files');
-    return;
-  }
-
-  const fd = new FormData();
-  fd.append('modality', templateModality.value);
-  for(const f of files){ fd.append('files', f); }
-
-  fetch(API + '/batch_upload_templates', { method:'POST', body: fd })
+  fetch(API+"/batch_upload_templates",{method:"POST",body:fd})
   .then(r=>r.json())
-  .then(d=>{
-    result.textContent = JSON.stringify(d,null,2);
-    loadTemplateList();
-  });
+  .then(d=>result.textContent=JSON.stringify(d,null,2));
 }
 
 function batchUploadReportsDifferentPatients(){
-  const files = uploadReportFile.files;
-  if(!files.length){
-    alert('Select one or more report files');
-    return;
-  }
+  const fd=new FormData();
+  fd.append("modality",uploadReportModality.value);
+  for(const f of uploadReportFile.files) fd.append("files",f);
 
-  const modalityToSave = uploadReportModality.value;
-
-  const fd = new FormData();
-  fd.append('modality', modalityToSave);
-  for(const f of files){ fd.append('files', f); }
-
-  fetch(API + '/batch_upload_reports_auto', { method:'POST', body: fd })
-    .then(r=>r.json())
-    .then(d=>{
-      result.textContent =
-        'Uploaded ' + d.count +
-        ' reports under modality: ' + modalityToSave + '
-' +
-        JSON.stringify(d, null, 2);
-    });
+  fetch(API+"/batch_upload_reports_auto",{method:"POST",body:fd})
+  .then(r=>r.json())
+  .then(d=>{
+    result.textContent = `Uploaded ${d.count} reports
+${JSON.stringify(d,null,2)}`;
+  });
 }
 </script>
 
 </body>
 </html>
-
-
-
-
-
-
-
-
