@@ -103,17 +103,16 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
 </div>
 
 <script>
-console.log("JS LOADED");
 const API = "https://malwa-ris-backend.onrender.com";
 
-function cmd(c){ document.execCommand(c,false,null); }
+function cmd(c){document.execCommand(c,false,null)}
 
 async function safeFetch(url, options={}){
   const res = await fetch(url, options);
   const text = await res.text();
   if(!res.ok){ throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`); }
   try{ return JSON.parse(text); }
-  catch{ throw new Error("Server returned non-JSON response:\n"+text.slice(0,200))); }
+  catch{ throw new Error("Server returned non-JSON response:\n"+text.slice(0,200)); }
 }
 
 function saveReport(){
@@ -132,11 +131,11 @@ function saveReport(){
 }
 
 function saveTemplate(){
-  if(!templateModality.value){ result.textContent="Select template modality"; return; }
+  if(!templateModality.value){result.textContent="Select template modality";return;}
   safeFetch(API+"/save_template",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ modality:templateModality.value, content:content.innerHTML })
+    body:JSON.stringify({modality:templateModality.value,content:content.innerHTML})
   }).then(d=>result.textContent=JSON.stringify(d,null,2))
     .catch(e=>result.textContent=e.message);
 }
@@ -151,30 +150,26 @@ function loadTemplateList(){
     .then(d=>{
       templateList.innerHTML='<option value="">Select template</option>';
       const list = Array.isArray(d.templates) ? d.templates : [];
-      if(list.length===0){ templateList.innerHTML='<option value="">No templates found</option>'; return; }
+      if(list.length===0){templateList.innerHTML='<option value="">No templates found</option>';return;}
       list.forEach(t=>{
         const o=document.createElement("option");
         o.value=t; o.textContent=t; templateList.appendChild(o);
       });
     })
-    .catch(e=>{
-      templateList.innerHTML='<option value="">Error loading templates</option>';
-      result.textContent=e.message;
-    });
+    .catch(e=>{templateList.innerHTML='<option value="">Error loading templates</option>';result.textContent=e.message});
 }
 
 function loadTemplate(){
   if(!templateList.value) return;
-  const filename = encodeURIComponent(templateList.value);
+  const filename=encodeURIComponent(templateList.value);
   safeFetch(API+`/load_template?modality=${templateModality.value}&filename=${filename}`)
     .then(d=>content.innerHTML=d.content||"")
     .catch(e=>result.textContent=e.message);
 }
 
 function batchUploadTemplates(){
-  if(!templateModality.value){ result.textContent="Select template modality"; return; }
-  const fd=new FormData();
-  fd.append("modality",templateModality.value);
+  if(!templateModality.value){result.textContent="Select template modality";return;}
+  const fd=new FormData(); fd.append("modality",templateModality.value);
   for(const f of batchTemplates.files) fd.append("files",f);
   safeFetch(API+"/batch_upload_templates",{method:"POST",body:fd})
     .then(d=>result.textContent=JSON.stringify(d,null,2))
@@ -182,8 +177,7 @@ function batchUploadTemplates(){
 }
 
 function batchUploadReportsDifferentPatients(){
-  const fd=new FormData();
-  fd.append("modality",uploadReportModality.value);
+  const fd=new FormData(); fd.append("modality",uploadReportModality.value);
   for(const f of uploadReportFile.files) fd.append("files",f);
   safeFetch(API+"/batch_upload_reports_auto",{method:"POST",body:fd})
     .then(d=>result.textContent=JSON.stringify(d,null,2))
@@ -200,12 +194,16 @@ function fetchReports(){
     .then(d=>{
       result.textContent=JSON.stringify(d,null,2);
       reportList.innerHTML="";
-      const list = d.reports || [];
-      if(list.length===0){ reportList.innerHTML="No reports found"; return; }
-      list.forEach(r=>{
+      (d.reports||[]).forEach(r=>{
         const div=document.createElement("div");
         div.className="top-row";
         div.style.marginBottom="8px";
+        div.innerHTML=`<div class=\"field large\"><b>${r.filename}</b><br>${r.path}</div><button onclick=\"downloadReport('${r.path}','docx')\">Word</button><button onclick=\"downloadReport('${r.path}','pdf')\">PDF</button>`;
+        reportList.appendChild(div);
+      });
+    })
+    .catch(e=>{reportList.innerHTML=""; result.textContent=e.message});
+}
 
 function downloadReport(path,type){
   window.open(API+`/download_report?path=${encodeURIComponent(path)}&type=${type}`,'_blank');
@@ -213,4 +211,3 @@ function downloadReport(path,type){
 </script>
 </body>
 </html>
-
