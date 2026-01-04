@@ -83,11 +83,7 @@ def save_report():
 
     bucket.blob(path).upload_from_string(content, content_type="text/html")
 
-    return jsonify({
-        "status": "saved",
-        "filename": fname,
-        "path": path
-    }), 200
+    return jsonify({"status": "saved", "filename": fname, "path": path}), 200
 
 
 @app.route("/list_reports", methods=["GET"])
@@ -111,6 +107,7 @@ def list_reports():
     return jsonify({"reports": reports}), 200
 
 
+# ================= FIXED DOWNLOAD =================
 @app.route("/download_report", methods=["GET"])
 def download_report():
     path = request.args.get("path")
@@ -121,16 +118,23 @@ def download_report():
         return jsonify({"error": "not found"}), 404
 
     html = blob.download_as_text()
+    base_name = os.path.splitext(os.path.basename(path))[0]
 
     if typ == "docx":
-        return send_file(html_to_docx(html),
-                         as_attachment=True,
-                         download_name="report.docx")
+        return send_file(
+            html_to_docx(html),
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            as_attachment=True,
+            download_name=f"{base_name}.docx"
+        )
 
     if typ == "pdf":
-        return send_file(html_to_pdf(html),
-                         as_attachment=True,
-                         download_name="report.pdf")
+        return send_file(
+            html_to_pdf(html),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"{base_name}.pdf"
+        )
 
     return jsonify({"error": "invalid type"}), 400
 
@@ -151,11 +155,7 @@ def save_template():
 
     bucket.blob(path).upload_from_string(content, content_type="text/html")
 
-    return jsonify({
-        "status": "saved",
-        "filename": fname,
-        "path": path
-    }), 200
+    return jsonify({"status": "saved", "filename": fname, "path": path}), 200
 
 
 @app.route("/list_templates", methods=["GET"])
@@ -208,11 +208,7 @@ def batch_upload_templates():
         bucket.blob(path).upload_from_string(html, content_type="text/html")
         saved.append(fname)
 
-    return jsonify({
-        "status": "uploaded",
-        "count": len(saved),
-        "files": saved
-    }), 200
+    return jsonify({"status": "uploaded", "count": len(saved), "files": saved}), 200
 
 # =================================================
 # EDITOR EXPORT
@@ -220,22 +216,29 @@ def batch_upload_templates():
 @app.route("/export_docx", methods=["POST"])
 def export_docx():
     html = request.get_json(force=True).get("html", "")
-    return send_file(html_to_docx(html),
-                     as_attachment=True,
-                     download_name="report.docx")
+    return send_file(
+        html_to_docx(html),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        as_attachment=True,
+        download_name="report.docx"
+    )
 
 
 @app.route("/export_pdf", methods=["POST"])
 def export_pdf():
     html = request.get_json(force=True).get("html", "")
-    return send_file(html_to_pdf(html),
-                     as_attachment=True,
-                     download_name="report.pdf")
+    return send_file(
+        html_to_pdf(html),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="report.pdf"
+    )
 
 # ================= RUN =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
