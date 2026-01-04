@@ -102,6 +102,18 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
   </div>
 </div>
 
+<!-- BATCH TEMPLATE UPLOAD -->
+<br>
+<h4>Batch Upload Templates (DOCX / HTML)</h4>
+<div class="top-row">
+  <div class="field large">
+    <label>Select Multiple Files</label>
+    <input type="file" id="batchTemplates" multiple accept=".docx,.html">
+  </div>
+</div>
+<br>
+<button class="btn-template" onclick="batchUploadTemplates()">Upload Templates to Modality</button>
+
 <br>
 
 <label>Report / Template Content</label>
@@ -263,39 +275,31 @@ function loadTemplate(){
 }
 
 function uploadWord(){
-  const f = wordFile.files[0];
+  const f = wordFile?.files?.[0];
   if(!f) return alert('Select a file');
+}
 
-  if(uploadType.value === 'report'){
-    if(!patientName.value || !patientId.value || !reportDate.value){
-      alert('For REPORT upload, Patient Name, ID and Date are required');
-      return;
-    }
+function batchUploadTemplates(){
+  if(!templateModality.value){
+    alert('Select Template Modality');
+    return;
   }
 
-  if(uploadType.value === 'template' && !templateModality.value){
-    alert('Select Template Modality for template upload');
+  const files = batchTemplates.files;
+  if(!files.length){
+    alert('Select one or more template files');
     return;
   }
 
   const fd = new FormData();
-  fd.append('file', f);
-  fd.append('type', uploadType.value);
+  fd.append('modality', templateModality.value);
+  for(const f of files){ fd.append('files', f); }
 
-  if(uploadType.value === 'report'){
-    fd.append('modality', reportModality.value);
-    fd.append('patient_name', patientName.value);
-    fd.append('patient_id', patientId.value);
-    fd.append('date', reportDate.value);
-  } else {
-    fd.append('modality', templateModality.value);
-  }
-
-  fetch(API+'/upload_word', {method:'POST', body:fd})
+  fetch(API + '/batch_upload_templates', { method:'POST', body: fd })
   .then(r=>r.json())
   .then(d=>{
-    content.innerHTML = d.html || '';
     result.textContent = JSON.stringify(d,null,2);
+    loadTemplateList();
   });
 }
 </script>
