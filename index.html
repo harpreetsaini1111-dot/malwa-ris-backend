@@ -341,13 +341,14 @@ function batchUploadReportsDifferentPatients(){
   .then(r=>r.json())
   .then(d=>{
     result.textContent = 'Uploaded ' + d.count + ' reports under modality: ' + modalityToSave + '
-' + JSON.stringify(d, null, 2);
+' + JSON.stringify(d,null,2);
   });
 }
 </script>
 
 </body>
 </html>
+
 
 
 
