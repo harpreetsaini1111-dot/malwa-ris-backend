@@ -78,17 +78,33 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 <!-- TOP TOOLBAR -->
 <div class="top-row">
   <div class="field small">
-    <label>Modality</label>
-    <select id="modality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+    <label>Report Modality</label>
+    <select id="modality">
+      <option>CT</option>
+      <option>MRI</option>
+      <option>USG</option>
+      <option>XRAY</option>
+    </select>
   </div>
+
   <div class="field medium">
     <label>Template Modality</label>
-    <select id="templateModality" onchange="onTemplateModalityChange()"><option value="">–</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+    <select id="templateModality" onchange="onTemplateModalityChange()">
+      <option value="">–</option>
+      <option>CT</option>
+      <option>MRI</option>
+      <option>USG</option>
+      <option>XRAY</option>
+    </select>
   </div>
+
   <div class="field large">
     <label>Template</label>
-    <select id="templateList" onchange="loadTemplateContent()"><option value="">Select template</option></select>
+    <select id="templateList" onchange="loadTemplateContent()">
+      <option value="">Select template</option>
+    </select>
   </div>
+
   <div class="field large">
     <label>Filename</label>
     <input id="filename" placeholder="auto-generated">
@@ -113,65 +129,159 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 <hr>
 <h3>Fetch Saved Reports</h3>
 <div class="top-row">
-  <div class="field medium"><label>Fetch Modality</label><select id="fetchModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select></div>
+  <div class="field medium">
+    <label>Fetch Modality</label>
+    <select id="fetchModality">
+      <option>CT</option>
+      <option>MRI</option>
+      <option>USG</option>
+      <option>XRAY</option>
+    </select>
+  </div>
   <div class="field large"><label>Patient Name</label><input id="fetchName"></div>
   <div class="field medium"><label>Date</label><input id="fetchDate" type="date"></div>
   <div class="field medium"><label>ID</label><input id="fetchId"></div>
 </div>
-<div class="button-row"><button class="btn-report" onclick="fetchReports()">Fetch REPORTS</button></div>
+<div class="button-row">
+  <button class="btn-report" onclick="fetchReports()">Fetch REPORTS</button>
+</div>
 <div id="reportList"></div>
 
 <hr>
 <label>Upload Word Report (.docx)</label>
 <div class="top-row">
-  <div class="field medium"><label>Upload Folder</label><select id="uploadModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select></div>
-  <div class="field large"><label>Select Word File</label><input type="file" id="wordFile" accept=".docx"></div>
+  <div class="field medium">
+    <label>Upload Folder</label>
+    <select id="uploadModality">
+      <option>CT</option>
+      <option>MRI</option>
+      <option>USG</option>
+      <option>XRAY</option>
+    </select>
+  </div>
+  <div class="field large">
+    <label>Select Word File</label>
+    <input type="file" id="wordFile" accept=".docx">
+  </div>
 </div>
-<div class="button-row"><button class="btn-template" onclick="uploadWordReport()">Upload & Convert</button></div>
+<div class="button-row">
+  <button class="btn-template" onclick="uploadWordReport()">Upload & Convert</button>
+</div>
 
 <pre id="result">Ready</pre>
 </div>
 
 <script>
 const API = "https://malwa-ris-backend.onrender.com";
-function cmd(c){document.execCommand(c,false,null)}
-function normalizeFilename(n){return n && n.endsWith('.html')?n:n+'.html'}
 
+function cmd(c){
+  document.execCommand(c,false,null);
+}
+
+function normalizeFilename(n){
+  if(!n) return '';
+  return n.endsWith('.html') ? n : n + '.html';
+}
+
+/* ---------------- REPORT ---------------- */
 function saveReport(){
-  fetch(API+'/save_report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modality:modality.value,filename:normalizeFilename(filename.value||'report'),content:content.innerHTML})})
-  .then(r=>r.json()).then(d=>result.textContent=JSON.stringify(d,null,2))
+  const name = normalizeFilename(filename.value || 'report');
+
+  fetch(API+'/save_report',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      modality: modality.value,
+      filename: name,
+      content: content.innerHTML
+    })
+  })
+  .then(r=>r.json())
+  .then(d=>result.textContent = JSON.stringify(d,null,2));
 }
+
+/* ---------------- TEMPLATE ---------------- */
 function saveTemplate(){
-  fetch(API+'/save_template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modality:modality.value,filename:normalizeFilename(filename.value||'template'),content:content.innerHTML})})
-  .then(r=>r.json()).then(d=>result.textContent=JSON.stringify(d,null,2))
+  if(!templateModality.value){
+    alert("Select Template Modality");
+    return;
+  }
+
+  const name = normalizeFilename(filename.value || 'template');
+
+  fetch(API+'/save_template',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      modality: templateModality.value,   // ✅ CORRECT
+      filename: name,
+      content: content.innerHTML
+    })
+  })
+  .then(r=>r.json())
+  .then(d=>result.textContent = JSON.stringify(d,null,2));
 }
+
 function onTemplateModalityChange(){
-  fetch(API+'/list_templates?modality='+templateModality.value).then(r=>r.json()).then(d=>{
+  templateList.innerHTML='<option value="">Loading...</option>';
+
+  fetch(API+'/list_templates?modality='+templateModality.value)
+  .then(r=>r.json())
+  .then(d=>{
     templateList.innerHTML='<option value="">Select template</option>';
-    (d.templates||[]).forEach(t=>{let o=document.createElement('option');o.value=t;o.textContent=t;templateList.appendChild(o);});
+    (d.templates||[]).forEach(t=>{
+      const o=document.createElement('option');
+      o.value=t;
+      o.textContent=t;
+      templateList.appendChild(o);
+    });
   });
 }
+
 function loadTemplateContent(){
-  fetch(API+`/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
-  .then(r=>r.json()).then(d=>{content.innerHTML=d.content||'';filename.value=templateList.value.replace(/\.html$/,'');});
+  if(!templateList.value) return;
+
+  fetch(`${API}/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
+  .then(r=>r.json())
+  .then(d=>{
+    content.innerHTML = d.content || '';
+    filename.value = templateList.value.replace(/\.html$/,'');
+  });
 }
+
+/* ---------------- FETCH REPORTS ---------------- */
 function fetchReports(){
-  fetch(API+`/list_reports?modality=${fetchModality.value}&name=${fetchName.value}&date=${fetchDate.value}&id=${fetchId.value}`)
-  .then(r=>r.json()).then(d=>renderReportList(d.reports||[]));
+  fetch(`${API}/list_reports?modality=${fetchModality.value}&name=${fetchName.value}&date=${fetchDate.value}&id=${fetchId.value}`)
+  .then(r=>r.json())
+  .then(d=>renderReportList(d.reports||[]));
 }
+
 function renderReportList(r){
-  reportList.innerHTML=r.length?'<ul>'+r.map(x=>`<li>${x.filename}</li>`).join('')+'</ul>':'No reports found';
+  reportList.innerHTML = r.length
+    ? '<ul>'+r.map(x=>`<li>${x.filename}</li>`).join('')+'</ul>'
+    : 'No reports found';
 }
+
+/* ---------------- WORD UPLOAD ---------------- */
 function uploadWordReport(){
-  const f=wordFile.files[0];if(!f)return alert('Select file');
-  const fd=new FormData();fd.append('file',f);fd.append('upload_modality',uploadModality.value);
-  fetch(API+'/upload_word_report',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{content.innerHTML=d.html||'';filename.value=d.filename||'';});
+  const f = wordFile.files[0];
+  if(!f) return alert('Select a Word file');
+
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('upload_modality', uploadModality.value);
+
+  fetch(API+'/upload_word_report',{method:'POST',body:fd})
+  .then(r=>r.json())
+  .then(d=>{
+    content.innerHTML = d.html || '';
+    filename.value = d.filename || '';
+  });
 }
 </script>
 
 </body>
 </html>
-
 
 
 
