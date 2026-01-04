@@ -18,7 +18,6 @@ body{
   max-width:1100px;
   margin:auto
 }
-h2{margin-top:0}
 .top-row{
   display:flex;
   gap:12px;
@@ -29,8 +28,8 @@ h2{margin-top:0}
   border:1px solid #e5e7eb
 }
 .field{display:flex;flex-direction:column}
-.field.small{flex:0 0 120px}
-.field.medium{flex:0 0 170px}
+.field.small{flex:0 0 140px}
+.field.medium{flex:0 0 180px}
 .field.large{flex:1}
 label{font-size:13px;color:#374151}
 select,input{
@@ -38,9 +37,7 @@ select,input{
   border-radius:8px;
   border:1px solid #d1d5db;
 }
-.button-row{display:flex;gap:12px;margin-top:14px}
 button{
-  flex:1;
   padding:11px 14px;
   font-weight:600;
   border:none;
@@ -54,234 +51,258 @@ button{
   border:1px solid #d1d5db;
   border-radius:10px;
   padding:12px;
-  font-family:Arial;
   background:#fff
 }
 pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
-.title-wrap{text-align:center;margin-bottom:10px}
-.blue-title{font-size:64px;font-weight:900;letter-spacing:4px}
-.blue-malwa{color:#0ea5e9}
-.blue-ris{color:#64748b}
-.gold-sub{text-align:center;font-weight:600;letter-spacing:2px;color:#64748b;margin-bottom:20px}
+.title{text-align:center;font-size:56px;font-weight:900;letter-spacing:4px;color:#0ea5e9}
+.subtitle{text-align:center;color:#64748b;margin-bottom:20px;font-weight:600}
 </style>
 </head>
 
 <body>
 
-<div class="title-wrap">
-  <h2 class="blue-title"><span class="blue-malwa">MALWA</span> <span class="blue-ris">RIS</span></h2>
-</div>
-<div class="gold-sub">Radiology Information System</div>
+<div class="title">MALWA RIS</div>
+<div class="subtitle">Radiology Information System</div>
 
 <div class="box">
 
-<!-- TOP TOOLBAR -->
+<!-- REPORT METADATA -->
+<h3>Report Details</h3>
 <div class="top-row">
   <div class="field small">
-    <label>Report Modality</label>
-    <select id="modality">
-      <option>CT</option>
-      <option>MRI</option>
-      <option>USG</option>
-      <option>XRAY</option>
-    </select>
+    <label>Modality</label>
+    <select id="reportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
   </div>
-
+  <div class="field large">
+    <label>Patient Name</label>
+    <input id="patientName" placeholder="Patient name">
+  </div>
   <div class="field medium">
-    <label>Template Modality</label>
-    <select id="templateModality" onchange="onTemplateModalityChange()">
-      <option value="">–</option>
-      <option>CT</option>
-      <option>MRI</option>
-      <option>USG</option>
-      <option>XRAY</option>
-    </select>
+    <label>Patient ID</label>
+    <input id="patientId" placeholder="UHID / ID">
   </div>
-
-  <div class="field large">
-    <label>Template</label>
-    <select id="templateList" onchange="loadTemplateContent()">
-      <option value="">Select template</option>
-    </select>
-  </div>
-
-  <div class="field large">
-    <label>Filename</label>
-    <input id="filename" placeholder="auto-generated">
+  <div class="field medium">
+    <label>Date</label>
+    <input id="reportDate" type="date">
   </div>
 </div>
 
 <br>
+
+<!-- TEMPLATE METADATA -->
+<h3>Template Details</h3>
+<div class="top-row">
+  <div class="field small">
+    <label>Template Modality</label>
+    <select id="templateModality" onchange="loadTemplateList()"><option value="">–</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+  </div>
+  <div class="field large">
+    <label>Template</label>
+    <select id="templateList" onchange="loadTemplate()"><option value="">Select template</option></select>
+  </div>
+</div>
+
+<br>
+
 <label>Report / Template Content</label>
-<div class="top-row" style="margin-top:6px">
+<div class="top-row" style="margin-bottom:8px">
+  <select onchange="setFont(this.value)">
+    <option value="">Font</option>
+    <option value="Arial">Arial</option>
+    <option value="Arial Black">Arial Black</option>
+    <option value="Calibri">Calibri</option>
+    <option value="Cambria">Cambria</option>
+    <option value="Candara">Candara</option>
+    <option value="Comic Sans MS">Comic Sans MS</option>
+    <option value="Courier New">Courier New</option>
+    <option value="Georgia">Georgia</option>
+    <option value="Helvetica">Helvetica</option>
+    <option value="Impact">Impact</option>
+    <option value="Lucida Console">Lucida Console</option>
+    <option value="Lucida Sans Unicode">Lucida Sans Unicode</option>
+    <option value="Segoe UI">Segoe UI</option>
+    <option value="Tahoma">Tahoma</option>
+    <option value="Times New Roman">Times New Roman</option>
+    <option value="Trebuchet MS">Trebuchet MS</option>
+    <option value="Verdana">Verdana</option>
+  </select>
+  <select onchange="setFontSize(this.value)"><option value="">Size</option><option value="2">Small</option><option value="3">Normal</option><option value="4">Large</option><option value="5">XL</option></select>
   <button onclick="cmd('bold')"><b>B</b></button>
   <button onclick="cmd('italic')"><i>I</i></button>
   <button onclick="cmd('underline')"><u>U</u></button>
+  <button onclick="cmd('insertUnorderedList')">• Bullets</button>
+  <button onclick="cmd('insertOrderedList')">1. List</button>
+  <button onclick="downloadFromEditor('docx')">Download DOCX</button>
+  <button onclick="downloadFromEditor('pdf')">Download PDF</button>
 </div>
-
 <div id="content" contenteditable="true"></div>
 
-<div class="button-row">
+<br>
+
+<div class="top-row">
   <button class="btn-report" onclick="saveReport()">Save REPORT</button>
   <button class="btn-template" onclick="saveTemplate()">Save TEMPLATE</button>
 </div>
 
 <hr>
-<h3>Fetch Saved Reports</h3>
+<h3>Fetch Reports</h3>
 <div class="top-row">
-  <div class="field medium">
-    <label>Fetch Modality</label>
-    <select id="fetchModality">
-      <option>CT</option>
-      <option>MRI</option>
-      <option>USG</option>
-      <option>XRAY</option>
-    </select>
-  </div>
+  <div class="field small"><label>Modality</label><select id="fetchModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select></div>
   <div class="field large"><label>Patient Name</label><input id="fetchName"></div>
   <div class="field medium"><label>Date</label><input id="fetchDate" type="date"></div>
-  <div class="field medium"><label>ID</label><input id="fetchId"></div>
 </div>
-<div class="button-row">
-  <button class="btn-report" onclick="fetchReports()">Fetch REPORTS</button>
-</div>
+<br>
+<button class="btn-report" onclick="fetchReports()">Fetch Reports</button>
 <div id="reportList"></div>
 
-<hr>
-<label>Upload Word Report (.docx)</label>
-<div class="top-row">
-  <div class="field medium">
-    <label>Upload Folder</label>
-    <select id="uploadModality">
-      <option>CT</option>
-      <option>MRI</option>
-      <option>USG</option>
-      <option>XRAY</option>
-    </select>
-  </div>
-  <div class="field large">
-    <label>Select Word File</label>
-    <input type="file" id="wordFile" accept=".docx">
-  </div>
-</div>
-<div class="button-row">
-  <button class="btn-template" onclick="uploadWordReport()">Upload & Convert</button>
-</div>
-
 <pre id="result">Ready</pre>
+
 </div>
 
 <script>
 const API = "https://malwa-ris-backend.onrender.com";
 
-function cmd(c){
-  document.execCommand(c,false,null);
+function cmd(c){document.execCommand(c,false,null)}
+function setFont(f){if(f) document.execCommand('fontName',false,f)}
+function setFontSize(s){if(s) document.execCommand('fontSize',false,s)}
+
+function downloadFromEditor(type){
+  fetch(API+`/export_${type}`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({html:content.innerHTML})
+  })
+  .then(r=>r.blob())
+  .then(b=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(b);
+    a.download=`report.${type}`;
+    a.click();
+  })
 }
 
-function normalizeFilename(n){
-  if(!n) return '';
-  return n.endsWith('.html') ? n : n + '.html';
+function fetchReports(){
+  fetch(API+`/list_reports?modality=${fetchModality.value}&name=${fetchName.value}&date=${fetchDate.value}`)
+  .then(r=>r.json())
+  .then(d=>{
+    reportList.innerHTML = d.reports?.length ? '<ul>' + d.reports.map(r=>
+      `<li>${r.filename} 
+      <button onclick=\"downloadReport('${r.path}','docx')\">DOCX</button>
+      <button onclick=\"downloadReport('${r.path}','pdf')\">PDF</button>
+      </li>`).join('') + '</ul>' : 'No reports found';
+  })
 }
 
-/* ---------------- REPORT ---------------- */
+function downloadReport(path,type){
+  fetch(API+`/download_report?path=${encodeURIComponent(path)}&type=${type}`)
+  .then(r=>r.blob())
+  .then(b=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(b);
+    a.download=`report.${type}`;
+    a.click();
+  })
+}
+
+
+function safe(v){return v.replace(/[^a-z0-9_-]/gi,'_')}
+
 function saveReport(){
-  const name = normalizeFilename(filename.value || 'report');
+  if(!patientName.value || !patientId.value || !reportDate.value){
+    alert("Patient name, ID, and date are required");
+    return;
+  }
 
   fetch(API+'/save_report',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      modality: modality.value,
-      filename: name,
+      modality: reportModality.value,
+      patient_name: patientName.value,
+      patient_id: patientId.value,
+      date: reportDate.value,
       content: content.innerHTML
     })
-  })
-  .then(r=>r.json())
-  .then(d=>result.textContent = JSON.stringify(d,null,2));
+  }).then(r=>r.json()).then(d=>result.textContent=JSON.stringify(d,null,2));
 }
 
-/* ---------------- TEMPLATE ---------------- */
 function saveTemplate(){
   if(!templateModality.value){
-    alert("Select Template Modality");
+    alert("Select template modality");
     return;
   }
-
-  const name = normalizeFilename(filename.value || 'template');
 
   fetch(API+'/save_template',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      modality: templateModality.value,   // ✅ CORRECT
-      filename: name,
+      modality: templateModality.value,
       content: content.innerHTML
     })
-  })
-  .then(r=>r.json())
-  .then(d=>result.textContent = JSON.stringify(d,null,2));
+  }).then(r=>r.json()).then(d=>result.textContent=JSON.stringify(d,null,2));
 }
 
-function onTemplateModalityChange(){
-  templateList.innerHTML='<option value="">Loading...</option>';
-
-  fetch(API+'/list_templates?modality='+templateModality.value)
+function loadTemplateList(){
+  if(!templateModality.value) return;
+  fetch(API+`/list_templates?modality=${templateModality.value}`)
   .then(r=>r.json())
   .then(d=>{
     templateList.innerHTML='<option value="">Select template</option>';
     (d.templates||[]).forEach(t=>{
-      const o=document.createElement('option');
-      o.value=t;
-      o.textContent=t;
-      templateList.appendChild(o);
+      let o=document.createElement('option');
+      o.value=t;o.textContent=t;templateList.appendChild(o);
     });
   });
 }
 
-function loadTemplateContent(){
+function loadTemplate(){
   if(!templateList.value) return;
-
-  fetch(`${API}/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
+  fetch(API+`/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
   .then(r=>r.json())
-  .then(d=>{
-    content.innerHTML = d.content || '';
-    filename.value = templateList.value.replace(/\.html$/,'');
-  });
+  .then(d=>content.innerHTML=d.content||'');
 }
 
-/* ---------------- FETCH REPORTS ---------------- */
-function fetchReports(){
-  fetch(`${API}/list_reports?modality=${fetchModality.value}&name=${fetchName.value}&date=${fetchDate.value}&id=${fetchId.value}`)
-  .then(r=>r.json())
-  .then(d=>renderReportList(d.reports||[]));
-}
-
-function renderReportList(r){
-  reportList.innerHTML = r.length
-    ? '<ul>'+r.map(x=>`<li>${x.filename}</li>`).join('')+'</ul>'
-    : 'No reports found';
-}
-
-/* ---------------- WORD UPLOAD ---------------- */
-function uploadWordReport(){
+function uploadWord(){
   const f = wordFile.files[0];
-  if(!f) return alert('Select a Word file');
+  if(!f) return alert('Select a file');
+
+  if(uploadType.value === 'report'){
+    if(!patientName.value || !patientId.value || !reportDate.value){
+      alert('For REPORT upload, Patient Name, ID and Date are required');
+      return;
+    }
+  }
+
+  if(uploadType.value === 'template' && !templateModality.value){
+    alert('Select Template Modality for template upload');
+    return;
+  }
 
   const fd = new FormData();
   fd.append('file', f);
-  fd.append('upload_modality', uploadModality.value);
+  fd.append('type', uploadType.value);
 
-  fetch(API+'/upload_word_report',{method:'POST',body:fd})
+  if(uploadType.value === 'report'){
+    fd.append('modality', reportModality.value);
+    fd.append('patient_name', patientName.value);
+    fd.append('patient_id', patientId.value);
+    fd.append('date', reportDate.value);
+  } else {
+    fd.append('modality', templateModality.value);
+  }
+
+  fetch(API+'/upload_word', {method:'POST', body:fd})
   .then(r=>r.json())
   .then(d=>{
     content.innerHTML = d.html || '';
-    filename.value = d.filename || '';
+    result.textContent = JSON.stringify(d,null,2);
   });
 }
 </script>
 
 </body>
 </html>
+
 
 
 
