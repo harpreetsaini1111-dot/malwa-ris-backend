@@ -35,7 +35,11 @@ def safe(text):
     return "".join(c if c.isalnum() or c in "_-" else "_" for c in text)
 
 def list_files(prefix):
-    return [b.name for b in bucket.list_blobs(prefix=prefix) if not b.name.endswith("/")]
+    return [
+        b.name
+        for b in bucket.list_blobs(prefix=prefix)
+        if not b.name.endswith("/")
+    ]
 
 def html_to_docx(html):
     doc = Document()
@@ -70,18 +74,21 @@ def extract_patient_details(text):
     for line in text.splitlines():
         if not name:
             m = re.search(patterns["name"], line, re.I)
-            if m: name = m.group(2).strip()
+            if m:
+                name = m.group(2).strip()
         if not pid:
             m = re.search(patterns["pid"], line, re.I)
-            if m: pid = m.group(3).strip()
+            if m:
+                pid = m.group(3).strip()
         if not date:
             m = re.search(patterns["date"], line, re.I)
-            if m: date = m.group(3).replace("/", "-")
+            if m:
+                date = m.group(3).replace("/", "-")
 
     return name, pid, date
 
 # =================================================
-# REPORTS (EDITOR SAVE)
+# SAVE REPORT (EDITOR)
 # =================================================
 @app.route("/save_report", methods=["POST"])
 def save_report():
@@ -102,10 +109,10 @@ def save_report():
 
     bucket.blob(path).upload_from_string(content, content_type="text/html")
 
-    return jsonify({"status": "saved", "filename": fname, "path": path}), 200
+    return jsonify({"status": "saved", "path": path}), 200
 
 # =================================================
-# BATCH UPLOAD REPORTS (AUTO EXTRACT FROM DOCUMENT)
+# BATCH UPLOAD REPORTS
 # =================================================
 @app.route("/batch_upload_reports_auto", methods=["POST"])
 def batch_upload_reports_auto():
@@ -123,16 +130,13 @@ def batch_upload_reports_auto():
         if f.filename.lower().endswith(".docx"):
             doc = Document(f)
             text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
         elif f.filename.lower().endswith(".html"):
             text = f.read().decode("utf-8")
-
         else:
             skipped.append(f.filename)
             continue
 
         name, pid, date_str = extract_patient_details(text)
-
         if not all([name, pid, date_str]):
             skipped.append(f.filename)
             continue
@@ -148,7 +152,7 @@ def batch_upload_reports_auto():
 
         html = text.replace("\n", "<br>")
         bucket.blob(path).upload_from_string(html, content_type="text/html")
-        saved.append(fname)
+        saved.append(path)
 
     return jsonify({
         "status": "uploaded",
@@ -158,7 +162,7 @@ def batch_upload_reports_auto():
     }), 200
 
 # =================================================
-# FETCH + DOWNLOAD REPORTS
+# LIST REPORTS  ✅ FIXED
 # =================================================
 @app.route("/list_reports")
 def list_reports():
@@ -166,7 +170,12 @@ def list_reports():
     name = request.args.get("name", "").lower()
     date = request.args.get("date", "").replace("-", "")
 
-    files = list_files(f"reports/{modality}/")
+    # ✅ FIX: correct prefix handling
+    prefix = "reports/"
+    if modality:
+        prefix = f"reports/{modality}/"
+
+    files = list_files(prefix)
     reports = []
 
     for p in files:
@@ -175,10 +184,16 @@ def list_reports():
             continue
         if date and date not in fn:
             continue
-        reports.append({"filename": fn, "path": p})
+        reports.append({
+            "filename": fn,
+            "path": p
+        })
 
     return jsonify({"reports": reports}), 200
 
+# =================================================
+# DOWNLOAD REPORT
+# =================================================
 @app.route("/download_report")
 def download_report():
     path = request.args.get("path")
@@ -194,7 +209,6 @@ def download_report():
     if typ == "docx":
         return send_file(
             html_to_docx(html),
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             as_attachment=True,
             download_name=f"{base}.docx"
         )
@@ -202,98 +216,11 @@ def download_report():
     if typ == "pdf":
         return send_file(
             html_to_pdf(html),
-            mimetype="application/pdf",
             as_attachment=True,
             download_name=f"{base}.pdf"
         )
 
     return jsonify({"error": "invalid type"}), 400
-
-# =================================================
-# TEMPLATES
-# =================================================
-@app.route("/save_template", methods=["POST"])
-def save_template():
-    d = request.get_json(force=True)
-    modality = d.get("modality", "").upper()
-    content = d.get("content")
-
-    if not modality or not content:
-        return jsonify({"error": "missing template fields"}), 400
-
-    fname = f"template_{int(datetime.utcnow().timestamp())}.html"
-    path = f"templates/{modality}/{fname}"
-
-    bucket.blob(path).upload_from_string(content, content_type="text/html")
-    return jsonify({"status": "saved", "filename": fname}), 200
-
-@app.route("/list_templates")
-def list_templates():
-    modality = request.args.get("modality", "").upper()
-    files = list_files(f"templates/{modality}/")
-    return jsonify({"templates": [f.split("/")[-1] for f in files]}), 200
-
-@app.route("/load_template")
-def load_template():
-    modality = request.args.get("modality", "").upper()
-    filename = request.args.get("filename")
-    path = f"templates/{modality}/{filename}"
-
-    blob = bucket.blob(path)
-    if not blob.exists():
-        return jsonify({"error": "not found"}), 404
-
-    return jsonify({"content": blob.download_as_text()}), 200
-
-@app.route("/batch_upload_templates", methods=["POST"])
-def batch_upload_templates():
-    modality = request.form.get("modality", "").upper()
-    files = request.files.getlist("files")
-
-    if not modality or not files:
-        return jsonify({"error": "modality and files required"}), 400
-
-    saved = []
-
-    for f in files:
-        if f.filename.lower().endswith(".docx"):
-            doc = Document(f)
-            html = "<br>".join(p.text for p in doc.paragraphs if p.text.strip())
-            fname = f.filename.replace(".docx", ".html")
-        elif f.filename.lower().endswith(".html"):
-            html = f.read().decode("utf-8")
-            fname = f.filename
-        else:
-            continue
-
-        path = f"templates/{modality}/{fname}"
-        bucket.blob(path).upload_from_string(html, content_type="text/html")
-        saved.append(fname)
-
-    return jsonify({"status": "uploaded", "count": len(saved)}), 200
-
-# =================================================
-# EDITOR EXPORT
-# =================================================
-@app.route("/export_docx", methods=["POST"])
-def export_docx():
-    html = request.get_json(force=True).get("html", "")
-    return send_file(
-        html_to_docx(html),
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        as_attachment=True,
-        download_name="report.docx"
-    )
-
-@app.route("/export_pdf", methods=["POST"])
-def export_pdf():
-    html = request.get_json(force=True).get("html", "")
-    return send_file(
-        html_to_pdf(html),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name="report.pdf"
-    )
 
 # ================= RUN =================
 if __name__ == "__main__":
