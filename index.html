@@ -340,41 +340,158 @@ function stripHtml(html){
   return div.innerText;
 }
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Malwa RIS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+  font-family:Segoe UI,Arial;
+  background:#f4f6fb;
+  padding:20px
+}
+.box{
+  background:#fff;
+  padding:20px;
+  border-radius:12px;
+  max-width:1100px;
+  margin:auto
+}
+.top-row{
+  display:flex;
+  gap:12px;
+  align-items:flex-end;
+  background:#f8fafc;
+  padding:14px;
+  border-radius:12px;
+  border:1px solid #e5e7eb
+}
+.field{display:flex;flex-direction:column}
+.field.small{flex:0 0 140px}
+.field.medium{flex:0 0 180px}
+.field.large{flex:1}
+label{font-size:13px;color:#374151}
+select,input{
+  padding:8px 10px;
+  border-radius:8px;
+  border:1px solid #d1d5db;
+}
+button{
+  padding:11px 14px;
+  font-weight:600;
+  border:none;
+  border-radius:10px;
+  cursor:pointer
+}
+.btn-report{background:#2563eb;color:#fff}
+.btn-template{background:#059669;color:#fff}
+#content{
+  min-height:260px;
+  border:1px solid #d1d5db;
+  border-radius:10px;
+  padding:12px;
+  background:#fff
+}
+pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
+.title{text-align:center;font-size:56px;font-weight:900;letter-spacing:4px;color:#0ea5e9}
+.subtitle{text-align:center;color:#64748b;margin-bottom:20px;font-weight:600}
+</style>
+</head>
+
+<body>
+
+<div class="title">MALWA RIS</div>
+<div class="subtitle">Radiology Information System</div>
+
+<div class="box">
+
+<h3>Fetch Reports</h3>
+<div class="top-row">
+  <div class="field small">
+    <label>Modality</label>
+    <select id="fetchModality">
+      <option value="">ALL</option>
+      <option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option>
+    </select>
+  </div>
+  <div class="field large">
+    <label>Patient Name</label>
+    <input id="fetchName" placeholder="Optional">
+  </div>
+  <div class="field medium">
+    <label>Date</label>
+    <input id="fetchDateFrom" type="date">
+  </div>
+  <button class="btn-report" onclick="fetchReports()">Fetch</button>
+</div>
+
+<br>
+<div id="reportList"></div>
+
+<hr>
+<pre id="result">Ready</pre>
+
+</div>
+
+<script>
+const API = "https://malwa-ris-backend.onrender.com";
+
+async function safeFetch(url){
+  const res = await fetch(url);
+  const text = await res.text();
+  return JSON.parse(text);
+}
+
 function fetchReports(){
-  const q = new URLSearchParams({
-    modality: fetchModality.value,
-    patient_name: fetchName.value,
-    date: fetchDate.value
-  }).toString();
+  reportList.innerHTML = "Loading reports…";
 
-  safeFetch(API + "/reports?" + q)
-  .then(d=>{
-    reportList.innerHTML = "";
-    (d.reports||[]).forEach(r=>{
-      const div=document.createElement('div');
-      div.className='top-row';
-      div.style.marginBottom='8px';
-      div.innerHTML = `
-        <div class="field large"><b>${r.patient_name}</b><br>${r.modality} | ${r.date}</div>
-        <button onclick="viewReport('${r.id}')">View</button>
-        <button onclick="downloadReport('${r.id}','word')">Word</button>
-        <button onclick="downloadReport('${r.id}','pdf')">PDF</button>
-      `;
-      reportList.appendChild(div);
+  const params = new URLSearchParams();
+  if(fetchModality.value) params.append("modality", fetchModality.value);
+  if(fetchName.value) params.append("name", fetchName.value);
+  if(fetchDateFrom.value) params.append("date", fetchDateFrom.value.replace(/-/g,""));
+
+  safeFetch(API + "/list_reports?" + params.toString())
+    .then(d => {
+      result.textContent = JSON.stringify(d, null, 2);
+      const list = d.reports || [];
+      reportList.innerHTML = "";
+
+      if(list.length === 0){
+        reportList.innerHTML = "No reports found";
+        return;
+      }
+
+      list.forEach(r => {
+        const div = document.createElement("div");
+        div.className = "top-row";
+        div.style.marginBottom = "8px";
+        div.innerHTML = `
+          <div class="field large">
+            <b>${r.filename}</b><br>
+            ${r.path}
+          </div>
+          <button onclick="downloadReport('${r.path}','docx')">Word</button>
+          <button onclick="downloadReport('${r.path}','pdf')">PDF</button>
+        `;
+        reportList.appendChild(div);
+      });
+    })
+    .catch(e=>{
+      result.textContent = "ERROR: " + e.message;
     });
-  });
 }
 
-function viewReport(id){
-  safeFetch(API + `/report/${id}`)
-  .then(d=>{
-    content.innerText = stripHtml(d.content || "");
-  });
+function downloadReport(path,type){
+  window.open(API + `/download_report?path=${encodeURIComponent(path)}&type=${type}`,'_blank');
 }
+</script>
 
-function downloadReport(id,type){
-  window.open(API + `/report/${id}/download?type=`+type,'_blank');
-}
+</body>
+</html>
+
 </script>
 
 </body>
