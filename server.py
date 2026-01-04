@@ -83,13 +83,18 @@ def save_report():
 
     bucket.blob(path).upload_from_string(content, content_type="text/html")
 
-    return jsonify({"status": "saved", "path": path, "filename": fname})
+    return jsonify({
+        "status": "saved",
+        "filename": fname,
+        "path": path
+    }), 200
 
-@app.route("/list_reports")
+
+@app.route("/list_reports", methods=["GET"])
 def list_reports():
     modality = request.args.get("modality", "").upper()
     name = request.args.get("name", "").lower()
-    date = request.args.get("date")
+    date = request.args.get("date", "").replace("-", "")
 
     prefix = f"reports/{modality}/"
     blobs = list_files(prefix)
@@ -99,13 +104,14 @@ def list_reports():
         fn = p.split("/")[-1]
         if name and name not in fn.lower():
             continue
-        if date and date.replace("-", "") not in fn:
+        if date and date not in fn:
             continue
         reports.append({"filename": fn, "path": p})
 
-    return jsonify({"reports": reports})
+    return jsonify({"reports": reports}), 200
 
-@app.route("/download_report")
+
+@app.route("/download_report", methods=["GET"])
 def download_report():
     path = request.args.get("path")
     typ = request.args.get("type")
@@ -145,25 +151,68 @@ def save_template():
 
     bucket.blob(path).upload_from_string(content, content_type="text/html")
 
-    return jsonify({"status": "saved", "filename": fname, "path": path})
+    return jsonify({
+        "status": "saved",
+        "filename": fname,
+        "path": path
+    }), 200
 
-@app.route("/list_templates")
+
+@app.route("/list_templates", methods=["GET"])
 def list_templates():
     modality = request.args.get("modality", "").upper()
     files = list_files(f"templates/{modality}/")
-    return jsonify({"templates": [f.split("/")[-1] for f in files]})
+    return jsonify({"templates": [f.split("/")[-1] for f in files]}), 200
 
-@app.route("/load_template")
+
+@app.route("/load_template", methods=["GET"])
 def load_template():
     modality = request.args.get("modality", "").upper()
     filename = request.args.get("filename")
-    path = f"templates/{modality}/{filename}"
 
+    path = f"templates/{modality}/{filename}"
     blob = bucket.blob(path)
+
     if not blob.exists():
         return jsonify({"error": "not found"}), 404
 
-    return jsonify({"content": blob.download_as_text()})
+    return jsonify({"content": blob.download_as_text()}), 200
+
+
+@app.route("/batch_upload_templates", methods=["POST"])
+def batch_upload_templates():
+    modality = request.form.get("modality", "").upper()
+    files = request.files.getlist("files")
+
+    if not modality or not files:
+        return jsonify({"error": "modality and files required"}), 400
+
+    saved = []
+
+    for f in files:
+        name = f.filename.lower()
+
+        if name.endswith(".docx"):
+            doc = Document(f)
+            html = "<br>".join(p.text for p in doc.paragraphs if p.text.strip())
+            fname = f.filename.replace(".docx", ".html")
+
+        elif name.endswith(".html"):
+            html = f.read().decode("utf-8")
+            fname = f.filename
+
+        else:
+            continue
+
+        path = f"templates/{modality}/{fname}"
+        bucket.blob(path).upload_from_string(html, content_type="text/html")
+        saved.append(fname)
+
+    return jsonify({
+        "status": "uploaded",
+        "count": len(saved),
+        "files": saved
+    }), 200
 
 # =================================================
 # EDITOR EXPORT
@@ -174,6 +223,7 @@ def export_docx():
     return send_file(html_to_docx(html),
                      as_attachment=True,
                      download_name="report.docx")
+
 
 @app.route("/export_pdf", methods=["POST"])
 def export_pdf():
@@ -186,6 +236,7 @@ def export_pdf():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
