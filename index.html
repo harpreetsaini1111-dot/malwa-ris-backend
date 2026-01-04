@@ -122,11 +122,33 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 
 <label>Editor</label>
 <div class="top-row">
+  <select onchange="setFont(this.value)">
+    <option value="">Font</option>
+    <option value="Arial">Arial</option>
+    <option value="Times New Roman">Times New Roman</option>
+    <option value="Calibri">Calibri</option>
+    <option value="Verdana">Verdana</option>
+    <option value="Georgia">Georgia</option>
+    <option value="Courier New">Courier New</option>
+  </select>
+  <select onchange="setFontSize(this.value)">
+    <option value="">Size</option>
+    <option value="2">Small</option>
+    <option value="3">Normal</option>
+    <option value="4">Large</option>
+    <option value="5">X‑Large</option>
+  </select>
   <button onclick="cmd('bold')"><b>B</b></button>
   <button onclick="cmd('italic')"><i>I</i></button>
   <button onclick="cmd('underline')"><u>U</u></button>
   <button onclick="cmd('insertUnorderedList')">•</button>
-  <button onclick="cmd('insertOrderedList')">1.</button>
+  <select onchange="setBulletStyle(this.value)">
+    <option value="">Bullet style</option>
+    <option value="disc">● Disc</option>
+    <option value="circle">○ Circle</option>
+    <option value="square">■ Square</option>
+  </select>
+  
 </div>
 
 <div id="content" contenteditable="true"></div>
@@ -157,6 +179,31 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 
 <hr>
 
+<h3>Fetch Reports</h3>
+<div class="top-row">
+  <div class="field small">
+    <label>Modality</label>
+    <select id="fetchModality">
+      <option value="">ALL</option>
+      <option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option>
+    </select>
+  </div>
+  <div class="field large">
+    <label>Patient Name</label>
+    <input id="fetchName" placeholder="Optional">
+  </div>
+  <div class="field medium">
+    <label>Date</label>
+    <input id="fetchDate" type="date">
+  </div>
+  <button class="btn-report" onclick="fetchReports()">Fetch</button>
+</div>
+
+<br>
+<div id="reportList"></div>
+
+<hr>
+
 <pre id="result">Ready</pre>
 
 </div>
@@ -164,46 +211,87 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px}
 <script>
 console.log("JS LOADED");
 
+// Frontend-only compatibility layer
+// Do NOT change server. We adapt requests here.
 const API = "https://malwa-ris-backend.onrender.com";
+
+async function safeFetch(url, options = {}) {
+  try {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (!res.ok) {
+      throw new Error(data.error || data.message || res.status + " " + res.statusText);
+    }
+    return data;
+  } catch (err) {
+    result.textContent = "ERROR: " + err.message;
+    throw err;
+  }
+}
+
 
 function cmd(c){
   document.execCommand(c,false,null);
 }
 
+function setFont(font){
+  if(!font) return;
+  document.execCommand('fontName', false, font);
+}
+
+function setFontSize(size){
+  if(!size) return;
+  document.execCommand('fontSize', false, size);
+}
+
+function setBulletStyle(style){
+  if(!style) return;
+  const sel = window.getSelection();
+  if(!sel.rangeCount) return;
+  let node = sel.anchorNode;
+  while(node && node.nodeName !== 'UL'){
+    node = node.parentNode;
+  }
+  if(node && node.style) node.style.listStyleType = style;
+}
+
 function saveReport(){
-  fetch(API + "/save_report",{
+  safeFetch(API + "/save_report",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
       modality:reportModality.value,
-      patient_name:patientName.value,
-      patient_id:patientId.value,
-      date:reportDate.value,
-      content:content.innerHTML
+      patient_name:patientName.value || "UNKNOWN",
+      patient_id:patientId.value || "AUTO",
+      date:reportDate.value || new Date().toISOString().slice(0,10),
+      content:content.innerHTML || ""
     })
-  })
-  .then(r=>r.json())
-  .then(d=>result.textContent=JSON.stringify(d,null,2))
-  .catch(e=>result.textContent=e.message);
+  }).then(d=>result.textContent=JSON.stringify(d,null,2));
 }
 
 function saveTemplate(){
-  fetch(API + "/save_template",{
+  if(!templateModality.value){
+    result.textContent = "Select template modality first";
+    return;
+  }
+  safeFetch(API + "/save_template",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
       modality:templateModality.value,
-      content:content.innerHTML
+      content:content.innerHTML || ""
     })
-  })
-  .then(r=>r.json())
-  .then(d=>result.textContent=JSON.stringify(d,null,2))
-  .catch(e=>result.textContent=e.message);
+  }).then(d=>result.textContent=JSON.stringify(d,null,2));
 }
 
 function loadTemplateList(){
-  fetch(API + "/list_templates?modality="+templateModality.value)
-  .then(r=>r.json())
+  if(!templateModality.value){
+    templateList.innerHTML='<option value="">Select template</option>';
+    return;
+  }
+  safeFetch(API + "/list_templates?modality="+templateModality.value)
   .then(d=>{
     templateList.innerHTML='<option value="">Select template</option>';
     (d.templates||[]).forEach(t=>{
@@ -216,18 +304,21 @@ function loadTemplateList(){
 }
 
 function loadTemplate(){
-  fetch(API + `/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
-  .then(r=>r.json())
+  if(!templateList.value) return;
+  safeFetch(API + `/load_template?modality=${templateModality.value}&filename=${templateList.value}`)
   .then(d=>content.innerHTML=d.content||"");
 }
 
 function batchUploadTemplates(){
+  if(!templateModality.value){
+    result.textContent = "Select template modality first";
+    return;
+  }
   const fd=new FormData();
   fd.append("modality",templateModality.value);
   for(const f of batchTemplates.files) fd.append("files",f);
 
-  fetch(API+"/batch_upload_templates",{method:"POST",body:fd})
-  .then(r=>r.json())
+  safeFetch(API+"/batch_upload_templates",{method:"POST",body:fd})
   .then(d=>result.textContent=JSON.stringify(d,null,2));
 }
 
@@ -236,14 +327,56 @@ function batchUploadReportsDifferentPatients(){
   fd.append("modality",uploadReportModality.value);
   for(const f of uploadReportFile.files) fd.append("files",f);
 
-  fetch(API+"/batch_upload_reports_auto",{method:"POST",body:fd})
-  .then(r=>r.json())
+  safeFetch(API+"/batch_upload_reports_auto",{method:"POST",body:fd})
   .then(d=>{
-    result.textContent = `Uploaded ${d.count} reports
+    result.textContent = `Uploaded ${d.count || 0} reports
 ${JSON.stringify(d,null,2)}`;
   });
+}
+
+function stripHtml(html){
+  const div=document.createElement('div');
+  div.innerHTML=html;
+  return div.innerText;
+}
+
+function fetchReports(){
+  const q = new URLSearchParams({
+    modality: fetchModality.value,
+    patient_name: fetchName.value,
+    date: fetchDate.value
+  }).toString();
+
+  safeFetch(API + "/reports?" + q)
+  .then(d=>{
+    reportList.innerHTML = "";
+    (d.reports||[]).forEach(r=>{
+      const div=document.createElement('div');
+      div.className='top-row';
+      div.style.marginBottom='8px';
+      div.innerHTML = `
+        <div class="field large"><b>${r.patient_name}</b><br>${r.modality} | ${r.date}</div>
+        <button onclick="viewReport('${r.id}')">View</button>
+        <button onclick="downloadReport('${r.id}','word')">Word</button>
+        <button onclick="downloadReport('${r.id}','pdf')">PDF</button>
+      `;
+      reportList.appendChild(div);
+    });
+  });
+}
+
+function viewReport(id){
+  safeFetch(API + `/report/${id}`)
+  .then(d=>{
+    content.innerText = stripHtml(d.content || "");
+  });
+}
+
+function downloadReport(id,type){
+  window.open(API + `/report/${id}/download?type=`+type,'_blank');
 }
 </script>
 
 </body>
 </html>
+
