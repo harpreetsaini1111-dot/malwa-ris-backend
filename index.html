@@ -338,16 +338,20 @@ function batchUploadReportsDifferentPatients(){
   for(const f of files){ fd.append('files', f); }
 
   fetch(API + '/batch_upload_reports_auto', { method:'POST', body: fd })
-  .then(r=>r.json())
-  .then(d=>{
-    result.textContent = 'Uploaded ' + d.count + ' reports under modality: ' + modalityToSave + '
-' + JSON.stringify(d,null,2);
-  });
+    .then(r=>r.json())
+    .then(d=>{
+      result.textContent =
+        'Uploaded ' + d.count +
+        ' reports under modality: ' + modalityToSave + '
+' +
+        JSON.stringify(d, null, 2);
+    });
 }
 </script>
 
 </body>
 </html>
+
 
 
 
