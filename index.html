@@ -33,22 +33,42 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
 
 <h3>Create / Edit Report</h3>
 <div class="top-row">
-  <div class="field small"><label>Modality</label><select id="reportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select></div>
+  <div class="field small"><label>Modality</label>
+    <select id="reportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+  </div>
   <div class="field large"><label>Patient Name</label><input id="patientName"></div>
   <div class="field medium"><label>Patient ID</label><input id="patientId"></div>
   <div class="field medium"><label>Date</label><input id="reportDate" type="date"></div>
 </div>
+
 <br>
 <div class="top-row">
-  <button onclick="cmd('bold')"><b>B</b></button>
-  <button onclick="cmd('italic')"><i>I</i></button>
-  <button onclick="cmd('underline')"><u>U</u></button>
-  <button onclick="cmd('insertUnorderedList')">•</button>
+  <select onchange="setFont(this.value)">
+    <option value="">Font</option>
+    <option value="Arial">Arial</option>
+    <option value="Times New Roman">Times New Roman</option>
+    <option value="Calibri">Calibri</option>
+    <option value="Courier New">Courier New</option>
+  </select>
+  <select onchange="setSize(this.value)">
+    <option value="">Size</option>
+    <option value="2">Small</option>
+    <option value="3">Normal</option>
+    <option value="4">Large</option>
+    <option value="5">XL</option>
+  </select>
+  <button type="button" onclick="cmd('bold')"><b>B</b></button>
+  <button type="button" onclick="cmd('italic')"><i>I</i></button>
+  <button type="button" onclick="cmd('underline')"><u>U</u></button>
+  <button type="button" onclick="cmd('insertUnorderedList')">•</button>
+  <button type="button" onclick="cmd('insertOrderedList')">1.</button>
 </div>
+
 <div id="content" contenteditable="true"></div>
+
 <br>
 <div class="top-row">
-  <button class="btn-report" onclick="saveReport()">Save Report</button>
+  <button class="btn-report" type="button" onclick="saveReport()">Save Report</button>
 </div>
 
 <hr>
@@ -66,35 +86,46 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
       <option value="">Select template</option>
     </select>
   </div>
-  <button class="btn-template" onclick="saveTemplate()">Save Template</button>
+  <button class="btn-template" type="button" onclick="saveTemplate()">Save Template</button>
 </div>
 
 <br>
 <h4>Batch Upload Templates</h4>
 <div class="top-row">
+  <div class="field small"><label>Modality</label>
+    <select id="batchTemplateModality">
+      <option value="">–</option>
+      <option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option>
+    </select>
+  </div>
   <div class="field large"><input type="file" id="batchTemplates" multiple accept=".docx,.html"></div>
-  <button class="btn-template" onclick="batchUploadTemplates()">Upload Templates</button>
+  <button class="btn-template" type="button" onclick="batchUploadTemplates()">Upload Templates</button>
 </div>
 
 <hr>
 
 <h3>Batch Upload Reports</h3>
 <div class="top-row">
-  <div class="field small"><label>Modality</label><select id="uploadReportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select></div>
+  <div class="field small"><label>Modality</label>
+    <select id="uploadReportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+  </div>
   <div class="field large"><input type="file" id="uploadReportFile" multiple accept=".docx,.html"></div>
-  <button class="btn-report" onclick="batchUploadReportsDifferentPatients()">Upload</button>
+  <button class="btn-report" type="button" onclick="batchUploadReportsDifferentPatients()">Upload</button>
 </div>
 
 <hr>
 
 <h3>Fetch Reports</h3>
 <div class="top-row">
-  <div class="field small"><label>Modality</label><select id="fetchModality"><option value="">ALL</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select></div>
-  <div class="field large"><label>Patient Name</label><input id="fetchName" placeholder="Optional"></div>
+  <div class="field small"><label>Modality</label>
+    <select id="fetchModality"><option value="">ALL</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+  </div>
+  <div class="field large"><label>Patient Name</label><input id="fetchName"></div>
   <div class="field medium"><label>From</label><input id="fetchDateFrom" type="date"></div>
   <div class="field medium"><label>To</label><input id="fetchDateTo" type="date"></div>
-  <button class="btn-report" onclick="fetchReports()">Fetch</button>
+  <button class="btn-report" type="button" onclick="fetchReports()">Fetch</button>
 </div>
+
 <br>
 <div id="reportList"></div>
 
@@ -106,17 +137,18 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
 const API = "https://malwa-ris-backend.onrender.com";
 
 function cmd(c){document.execCommand(c,false,null)}
+function setFont(f){ if(f) document.execCommand('fontName',false,f) }
+function setSize(s){ if(s) document.execCommand('fontSize',false,s) }
 
 async function safeFetch(url, options={}){
   const res = await fetch(url, options);
   const text = await res.text();
-  if(!res.ok){ throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`); }
-  try{ return JSON.parse(text); }
-  catch{ throw new Error("Server returned non-JSON response:\n"+text.slice(0,200)); }
+  if(!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0,300)}`);
+  try{ return JSON.parse(text); } catch { return { message: text }; }
 }
 
 function saveReport(){
-  safeFetch(API+"/save_report",{
+  safeFetch(API + "/save_report",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
@@ -131,83 +163,88 @@ function saveReport(){
 }
 
 function saveTemplate(){
-  if(!templateModality.value){result.textContent="Select template modality";return;}
-  safeFetch(API+"/save_template",{
+  if(!templateModality.value){ result.textContent="Select template modality"; return; }
+  const name = prompt("Template name?");
+  if(!name) return;
+  safeFetch(API + "/save_template",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({modality:templateModality.value,content:content.innerHTML})
+    body:JSON.stringify({ modality:templateModality.value, name:name, content:content.innerHTML })
   }).then(d=>result.textContent=JSON.stringify(d,null,2))
     .catch(e=>result.textContent=e.message);
 }
 
 function loadTemplateList(){
-  templateList.innerHTML = '<option value="">Loading templates…</option>';
-  if(!templateModality.value){
-    templateList.innerHTML = '<option value="">Select template</option>';
-    return;
-  }
-  safeFetch(API+"/list_templates?modality="+templateModality.value)
+  templateList.innerHTML = '<option>Loading…</option>';
+  if(!templateModality.value){ templateList.innerHTML='<option>Select template</option>'; return; }
+  safeFetch(API + "/list_templates?modality=" + templateModality.value)
     .then(d=>{
-      templateList.innerHTML='<option value="">Select template</option>';
       const list = Array.isArray(d.templates) ? d.templates : [];
-      if(list.length===0){templateList.innerHTML='<option value="">No templates found</option>';return;}
+      templateList.innerHTML = '<option value="">Select template</option>';
+      if(!list.length){ templateList.innerHTML='<option>No templates</option>'; return; }
       list.forEach(t=>{
-        const o=document.createElement("option");
+        const o=document.createElement('option');
         o.value=t; o.textContent=t; templateList.appendChild(o);
       });
     })
-    .catch(e=>{templateList.innerHTML='<option value="">Error loading templates</option>';result.textContent=e.message});
+    .catch(e=>result.textContent=e.message);
 }
 
 function loadTemplate(){
   if(!templateList.value) return;
-  const filename=encodeURIComponent(templateList.value);
-  safeFetch(API+`/load_template?modality=${templateModality.value}&filename=${filename}`)
-    .then(d=>content.innerHTML=d.content||"")
+  safeFetch(API + `/load_template?modality=${templateModality.value}&filename=${encodeURIComponent(templateList.value)}`)
+    .then(d=>content.innerHTML = d.content || "")
     .catch(e=>result.textContent=e.message);
 }
 
 function batchUploadTemplates(){
-  if(!templateModality.value){result.textContent="Select template modality";return;}
-  const fd=new FormData(); fd.append("modality",templateModality.value);
-  for(const f of batchTemplates.files) fd.append("files",f);
-  safeFetch(API+"/batch_upload_templates",{method:"POST",body:fd})
+  const modality = batchTemplateModality.value || templateModality.value;
+  if(!modality){ result.textContent="Select template modality"; return; }
+  const fd = new FormData();
+  fd.append("modality", modality);
+  for(const f of batchTemplates.files) fd.append("files", f);
+  safeFetch(API + "/batch_upload_templates", { method:"POST", body:fd })
     .then(d=>result.textContent=JSON.stringify(d,null,2))
     .catch(e=>result.textContent=e.message);
 }
 
 function batchUploadReportsDifferentPatients(){
-  const fd=new FormData(); fd.append("modality",uploadReportModality.value);
-  for(const f of uploadReportFile.files) fd.append("files",f);
-  safeFetch(API+"/batch_upload_reports_auto",{method:"POST",body:fd})
+  const fd = new FormData();
+  fd.append("modality", uploadReportModality.value);
+  for(const f of uploadReportFile.files) fd.append("files", f);
+  safeFetch(API + "/batch_upload_reports_auto", { method:"POST", body:fd })
     .then(d=>result.textContent=JSON.stringify(d,null,2))
     .catch(e=>result.textContent=e.message);
 }
 
 function fetchReports(){
-  reportList.innerHTML="Loading reports…";
-  const params=new URLSearchParams();
-  if(fetchModality.value) params.append("modality",fetchModality.value);
-  if(fetchName.value) params.append("name",fetchName.value);
-  if(fetchDateFrom.value) params.append("date",fetchDateFrom.value.replace(/-/g,""));
-  safeFetch(API+"/list_reports?"+params.toString())
+  reportList.innerHTML = "Loading…";
+  const p = new URLSearchParams();
+  if(fetchModality.value) p.append("modality", fetchModality.value);
+  if(fetchName.value) p.append("name", fetchName.value);
+  if(fetchDateFrom.value) p.append("from", fetchDateFrom.value);
+  if(fetchDateTo.value) p.append("to", fetchDateTo.value);
+  safeFetch(API + "/list_reports?" + p.toString())
     .then(d=>{
-      result.textContent=JSON.stringify(d,null,2);
-      reportList.innerHTML="";
+      reportList.innerHTML = "";
       (d.reports||[]).forEach(r=>{
-        const div=document.createElement("div");
-        div.className="top-row";
-        div.style.marginBottom="8px";
-        div.innerHTML=`<div class=\"field large\"><b>${r.filename}</b><br>${r.path}</div><button onclick=\"downloadReport('${r.path}','docx')\">Word</button><button onclick=\"downloadReport('${r.path}','pdf')\">PDF</button>`;
+        const div=document.createElement('div');
+        div.className='top-row';
+        div.style.marginBottom='8px';
+        div.innerHTML = `<div class="field large"><b>${r.filename}</b><br>${r.path}</div>
+          <button onclick="downloadReport('${r.path}','docx')">Word</button>
+          <button onclick="downloadReport('${r.path}','pdf')">PDF</button>`;
         reportList.appendChild(div);
       });
+      result.textContent = JSON.stringify(d,null,2);
     })
-    .catch(e=>{reportList.innerHTML=""; result.textContent=e.message});
+    .catch(e=>result.textContent=e.message);
 }
 
 function downloadReport(path,type){
-  window.open(API+`/download_report?path=${encodeURIComponent(path)}&type=${type}`,'_blank');
+  window.open(API + `/download_report?path=${encodeURIComponent(path)}&type=${type}`, '_blank');
 }
 </script>
 </body>
 </html>
+
