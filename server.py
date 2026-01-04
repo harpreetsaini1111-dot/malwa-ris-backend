@@ -1,5 +1,6 @@
 import os
 import io
+import re
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -34,11 +35,7 @@ def safe(text):
     return "".join(c if c.isalnum() or c in "_-" else "_" for c in text)
 
 def list_files(prefix):
-    out = []
-    for blob in bucket.list_blobs(prefix=prefix):
-        if not blob.name.endswith("/"):
-            out.append(blob.name)
-    return out
+    return [b.name for b in bucket.list_blobs(prefix=prefix) if not b.name.endswith("/")]
 
 def html_to_docx(html):
     doc = Document()
@@ -61,8 +58,30 @@ def html_to_pdf(html):
     bio.seek(0)
     return bio
 
+def extract_patient_details(text):
+    name = pid = date = None
+
+    patterns = {
+        "name": r"(patient\s*name|name\s*of\s*patient)\s*[:\-]\s*(.+)",
+        "pid": r"(patient\s*(id|uhid)|uhid)\s*[:\-]\s*(.+)",
+        "date": r"(date|study\s*date)\s*[:\-]\s*(\d{2}[-/]\d{2}[-/]\d{4})"
+    }
+
+    for line in text.splitlines():
+        if not name:
+            m = re.search(patterns["name"], line, re.I)
+            if m: name = m.group(2).strip()
+        if not pid:
+            m = re.search(patterns["pid"], line, re.I)
+            if m: pid = m.group(3).strip()
+        if not date:
+            m = re.search(patterns["date"], line, re.I)
+            if m: date = m.group(3).replace("/", "-")
+
+    return name, pid, date
+
 # =================================================
-# REPORTS
+# REPORTS (EDITOR SAVE)
 # =================================================
 @app.route("/save_report", methods=["POST"])
 def save_report():
@@ -85,18 +104,72 @@ def save_report():
 
     return jsonify({"status": "saved", "filename": fname, "path": path}), 200
 
+# =================================================
+# BATCH UPLOAD REPORTS (AUTO EXTRACT FROM DOCUMENT)
+# =================================================
+@app.route("/batch_upload_reports_auto", methods=["POST"])
+def batch_upload_reports_auto():
+    modality = request.form.get("modality", "").upper()
+    files = request.files.getlist("files")
 
-@app.route("/list_reports", methods=["GET"])
+    if not modality or not files:
+        return jsonify({"error": "modality and files required"}), 400
+
+    saved, skipped = [], []
+
+    for f in files:
+        text = ""
+
+        if f.filename.lower().endswith(".docx"):
+            doc = Document(f)
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+        elif f.filename.lower().endswith(".html"):
+            text = f.read().decode("utf-8")
+
+        else:
+            skipped.append(f.filename)
+            continue
+
+        name, pid, date_str = extract_patient_details(text)
+
+        if not all([name, pid, date_str]):
+            skipped.append(f.filename)
+            continue
+
+        try:
+            dt = datetime.strptime(date_str, "%d-%m-%Y")
+        except ValueError:
+            skipped.append(f.filename)
+            continue
+
+        fname = f"{safe(name)}_{safe(pid)}_{dt.strftime('%Y%m%d')}.html"
+        path = f"reports/{modality}/{dt.year}/{dt.month:02d}/{fname}"
+
+        html = text.replace("\n", "<br>")
+        bucket.blob(path).upload_from_string(html, content_type="text/html")
+        saved.append(fname)
+
+    return jsonify({
+        "status": "uploaded",
+        "count": len(saved),
+        "saved": saved,
+        "skipped": skipped
+    }), 200
+
+# =================================================
+# FETCH + DOWNLOAD REPORTS
+# =================================================
+@app.route("/list_reports")
 def list_reports():
     modality = request.args.get("modality", "").upper()
     name = request.args.get("name", "").lower()
     date = request.args.get("date", "").replace("-", "")
 
-    prefix = f"reports/{modality}/"
-    blobs = list_files(prefix)
-
+    files = list_files(f"reports/{modality}/")
     reports = []
-    for p in blobs:
+
+    for p in files:
         fn = p.split("/")[-1]
         if name and name not in fn.lower():
             continue
@@ -106,9 +179,7 @@ def list_reports():
 
     return jsonify({"reports": reports}), 200
 
-
-# ================= FIXED DOWNLOAD =================
-@app.route("/download_report", methods=["GET"])
+@app.route("/download_report")
 def download_report():
     path = request.args.get("path")
     typ = request.args.get("type")
@@ -118,14 +189,14 @@ def download_report():
         return jsonify({"error": "not found"}), 404
 
     html = blob.download_as_text()
-    base_name = os.path.splitext(os.path.basename(path))[0]
+    base = os.path.splitext(os.path.basename(path))[0]
 
     if typ == "docx":
         return send_file(
             html_to_docx(html),
             mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             as_attachment=True,
-            download_name=f"{base_name}.docx"
+            download_name=f"{base}.docx"
         )
 
     if typ == "pdf":
@@ -133,7 +204,7 @@ def download_report():
             html_to_pdf(html),
             mimetype="application/pdf",
             as_attachment=True,
-            download_name=f"{base_name}.pdf"
+            download_name=f"{base}.pdf"
         )
 
     return jsonify({"error": "invalid type"}), 400
@@ -154,30 +225,25 @@ def save_template():
     path = f"templates/{modality}/{fname}"
 
     bucket.blob(path).upload_from_string(content, content_type="text/html")
+    return jsonify({"status": "saved", "filename": fname}), 200
 
-    return jsonify({"status": "saved", "filename": fname, "path": path}), 200
-
-
-@app.route("/list_templates", methods=["GET"])
+@app.route("/list_templates")
 def list_templates():
     modality = request.args.get("modality", "").upper()
     files = list_files(f"templates/{modality}/")
     return jsonify({"templates": [f.split("/")[-1] for f in files]}), 200
 
-
-@app.route("/load_template", methods=["GET"])
+@app.route("/load_template")
 def load_template():
     modality = request.args.get("modality", "").upper()
     filename = request.args.get("filename")
-
     path = f"templates/{modality}/{filename}"
-    blob = bucket.blob(path)
 
+    blob = bucket.blob(path)
     if not blob.exists():
         return jsonify({"error": "not found"}), 404
 
     return jsonify({"content": blob.download_as_text()}), 200
-
 
 @app.route("/batch_upload_templates", methods=["POST"])
 def batch_upload_templates():
@@ -190,17 +256,13 @@ def batch_upload_templates():
     saved = []
 
     for f in files:
-        name = f.filename.lower()
-
-        if name.endswith(".docx"):
+        if f.filename.lower().endswith(".docx"):
             doc = Document(f)
             html = "<br>".join(p.text for p in doc.paragraphs if p.text.strip())
             fname = f.filename.replace(".docx", ".html")
-
-        elif name.endswith(".html"):
+        elif f.filename.lower().endswith(".html"):
             html = f.read().decode("utf-8")
             fname = f.filename
-
         else:
             continue
 
@@ -208,7 +270,7 @@ def batch_upload_templates():
         bucket.blob(path).upload_from_string(html, content_type="text/html")
         saved.append(fname)
 
-    return jsonify({"status": "uploaded", "count": len(saved), "files": saved}), 200
+    return jsonify({"status": "uploaded", "count": len(saved)}), 200
 
 # =================================================
 # EDITOR EXPORT
@@ -222,7 +284,6 @@ def export_docx():
         as_attachment=True,
         download_name="report.docx"
     )
-
 
 @app.route("/export_pdf", methods=["POST"])
 def export_pdf():
@@ -238,6 +299,7 @@ def export_pdf():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
