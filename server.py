@@ -1,7 +1,11 @@
-import os, io, time
+import os
+import io
+import time
+
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from google.cloud import storage
+
 from docx import Document
 from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
@@ -13,26 +17,30 @@ CORS(app)
 # ================= GCS =================
 BUCKET_NAME = os.environ.get("GCS_BUCKET")
 if not BUCKET_NAME:
-    raise RuntimeError("GCS_BUCKET not set")
+    raise RuntimeError("GCS_BUCKET environment variable not set")
 
 client = storage.Client()
 bucket = client.bucket(BUCKET_NAME)
 
 # ================= HELPERS =================
-def auto_name(path):
+def auto_name(path: str) -> str:
+    """Auto-rename if file already exists"""
     blob = bucket.blob(path)
     if not blob.exists():
         return path
     base, ext = os.path.splitext(path)
     return f"{base}_{int(time.time())}{ext}"
 
-def upload_bytes(path, data, content_type):
+def upload_bytes(path: str, data: bytes, content_type: str):
     path = auto_name(path)
     blob = bucket.blob(path)
-    blob.upload_from_string(data, content_type=content_type)
+    blob.upload_from_string(
+        data,
+        content_type=content_type or "application/octet-stream"
+    )
     return path
 
-def html_to_docx(html):
+def html_to_docx(html: str) -> bytes:
     doc = Document()
     for line in html.replace("<br>", "\n").split("\n"):
         doc.add_paragraph(line)
@@ -41,11 +49,11 @@ def html_to_docx(html):
     bio.seek(0)
     return bio.read()
 
-def html_to_pdf(html):
+def html_to_pdf(html: str) -> bytes:
     bio = io.BytesIO()
     styles = getSampleStyleSheet()
-    doc = SimpleDocTemplate(bio)
-    doc.build([Paragraph(html, styles["Normal"])])
+    pdf = SimpleDocTemplate(bio)
+    pdf.build([Paragraph(html, styles["Normal"])])
     bio.seek(0)
     return bio.read()
 
@@ -58,12 +66,13 @@ def home():
 @app.route("/save_report", methods=["POST"])
 def save_report():
     d = request.json
-    modality = d["modality"]
-    name = d["patient_name"].replace(" ", "_")
-    date = d["date"]
-    html = d["content"]
 
-    filename = f"{name}_{date}.docx"
+    modality = d["modality"]
+    patient = d.get("patient_name", "UNKNOWN").replace(" ", "_")
+    date = d.get("date", "")
+    html = d.get("content", "")
+
+    filename = f"{patient}_{date}.docx"
     path = f"reports/{modality}/{filename}"
 
     saved = upload_bytes(
@@ -80,9 +89,10 @@ def save_template():
     d = request.json
     modality = d["modality"]
     name = d["name"].replace(" ", "_") + ".html"
-    path = f"templates/{modality}/{name}"
 
-    saved = upload_bytes(path, d["content"], "text/html")
+    path = f"templates/{modality}/{name}"
+    saved = upload_bytes(path, d["content"].encode("utf-8"), "text/html")
+
     return jsonify({"saved": [saved], "skipped": []})
 
 # ================= LIST TEMPLATES =================
@@ -91,18 +101,20 @@ def list_templates():
     modality = request.args.get("modality")
     prefix = f"templates/{modality}/"
 
-    files = [
+    templates = [
         b.name.split("/")[-1]
         for b in bucket.list_blobs(prefix=prefix)
         if not b.name.endswith("/")
     ]
-    return jsonify({"templates": files})
+
+    return jsonify({"templates": templates})
 
 # ================= LOAD TEMPLATE =================
 @app.route("/load_template")
 def load_template():
     modality = request.args["modality"]
     filename = request.args["filename"]
+
     blob = bucket.blob(f"templates/{modality}/{filename}")
     return jsonify({"content": blob.download_as_text()})
 
@@ -115,17 +127,13 @@ def batch_upload_templates():
     for f in request.files.getlist("files"):
         try:
             path = f"templates/{modality}/{f.filename}"
-            saved.append(upload_bytes(
-                path,
-                f.read(),
-                f.content_type or "application/octet-stream"
-            ))
+            saved.append(upload_bytes(path, f.read(), f.content_type))
         except Exception as e:
             skipped.append({"file": f.filename, "reason": str(e)})
 
     return jsonify({"saved": saved, "skipped": skipped})
 
-# ================= BATCH UPLOAD REPORTS (FIXED) =================
+# ================= BATCH UPLOAD REPORTS (SAFE) =================
 @app.route("/batch_upload_reports_auto", methods=["POST"])
 def batch_upload_reports_auto():
     modality = request.form["modality"]
@@ -133,13 +141,9 @@ def batch_upload_reports_auto():
 
     for f in request.files.getlist("files"):
         try:
-            # DO NOT parse DOCX files. Ever.
+            # DO NOT parse DOCX files
             path = f"reports/{modality}/{f.filename}"
-            saved.append(upload_bytes(
-                path,
-                f.read(),
-                f.content_type or "application/octet-stream"
-            ))
+            saved.append(upload_bytes(path, f.read(), f.content_type))
         except Exception as e:
             skipped.append({"file": f.filename, "reason": str(e)})
 
@@ -184,6 +188,13 @@ def download_report():
         as_attachment=True,
         download_name=os.path.basename(path)
     )
+
+# ================= RUN (RENDER REQUIRED) =================
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+    
 
 
 
