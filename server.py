@@ -1,6 +1,7 @@
 import os
 import io
 import time
+import html
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -46,23 +47,33 @@ def upload_bytes(path: str, data: bytes, content_type: str):
     )
     return path
 
-def html_to_docx(html: str) -> bytes:
+def html_to_docx(html_text: str) -> bytes:
     """Used ONLY for reports created inside the editor"""
     doc = Document()
-    for line in html.replace("<br>", "\n").split("\n"):
+    for line in html_text.replace("<br>", "\n").split("\n"):
         doc.add_paragraph(line)
     bio = io.BytesIO()
     doc.save(bio)
     bio.seek(0)
     return bio.read()
 
-def html_to_pdf(html: str) -> bytes:
+def html_to_pdf(html_text: str) -> bytes:
     bio = io.BytesIO()
     styles = getSampleStyleSheet()
     pdf = SimpleDocTemplate(bio)
-    pdf.build([Paragraph(html, styles["Normal"])])
+    pdf.build([Paragraph(html_text, styles["Normal"])])
     bio.seek(0)
     return bio.read()
+
+def docx_to_html(file_obj) -> str:
+    """Convert DOCX template to simple HTML for editor"""
+    doc = Document(file_obj)
+    blocks = []
+    for p in doc.paragraphs:
+        text = html.escape(p.text)
+        if text.strip():
+            blocks.append(f"<p>{text}</p>")
+    return "\n".join(blocks)
 
 # =========================================================
 # BASIC
@@ -81,21 +92,21 @@ def save_report():
     modality = d["modality"]
     patient = d.get("patient_name", "UNKNOWN").replace(" ", "_")
     date = d.get("date", "")
-    html = d.get("content", "")
+    html_text = d.get("content", "")
 
     filename = f"{patient}_{date}.docx"
     path = f"reports/{modality}/{filename}"
 
     saved = upload_bytes(
         path,
-        html_to_docx(html),
+        html_to_docx(html_text),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
     return jsonify({"saved": [saved], "skipped": []})
 
 # =========================================================
-# SAVE TEMPLATE
+# SAVE TEMPLATE (EDITOR HTML)
 # =========================================================
 @app.route("/save_template", methods=["POST"])
 def save_template():
@@ -129,7 +140,7 @@ def list_templates():
     return jsonify({"templates": templates})
 
 # =========================================================
-# LOAD TEMPLATE
+# LOAD TEMPLATE (HTML ONLY)
 # =========================================================
 @app.route("/load_template")
 def load_template():
@@ -140,7 +151,7 @@ def load_template():
     return jsonify({"content": blob.download_as_text()})
 
 # =========================================================
-# BATCH UPLOAD TEMPLATES (RAW STORAGE)
+# BATCH UPLOAD TEMPLATES (HTML + DOCX → HTML)
 # =========================================================
 @app.route("/batch_upload_templates", methods=["POST"])
 def batch_upload_templates():
@@ -149,14 +160,31 @@ def batch_upload_templates():
 
     for f in request.files.getlist("files"):
         try:
-            path = f"templates/{modality}/{f.filename}"
-            saved.append(upload_bytes(
-                path,
-                f.read(),
-                f.content_type
-            ))
+            base = os.path.splitext(f.filename)[0]
+
+            # HTML template
+            if f.filename.lower().endswith(".html"):
+                content = f.read().decode("utf-8", errors="ignore")
+                path = f"templates/{modality}/{base}.html"
+                saved.append(upload_bytes(path, content.encode("utf-8"), "text/html"))
+
+            # DOCX template → convert to HTML
+            elif f.filename.lower().endswith(".docx"):
+                html_content = docx_to_html(f)
+                path = f"templates/{modality}/{base}.html"
+                saved.append(upload_bytes(path, html_content.encode("utf-8"), "text/html"))
+
+            else:
+                skipped.append({
+                    "file": f.filename,
+                    "reason": "Unsupported template format"
+                })
+
         except Exception as e:
-            skipped.append({"file": f.filename, "reason": str(e)})
+            skipped.append({
+                "file": f.filename,
+                "reason": str(e)
+            })
 
     return jsonify({"saved": saved, "skipped": skipped})
 
@@ -231,6 +259,7 @@ def download_report():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
