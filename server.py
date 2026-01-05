@@ -10,11 +10,15 @@ from docx import Document
 from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 
-# ================= APP =================
+# =========================================================
+# APP
+# =========================================================
 app = Flask(__name__)
 CORS(app)
 
-# ================= GCS =================
+# =========================================================
+# GCS SETUP
+# =========================================================
 BUCKET_NAME = os.environ.get("GCS_BUCKET")
 if not BUCKET_NAME:
     raise RuntimeError("GCS_BUCKET environment variable not set")
@@ -22,9 +26,11 @@ if not BUCKET_NAME:
 client = storage.Client()
 bucket = client.bucket(BUCKET_NAME)
 
-# ================= HELPERS =================
+# =========================================================
+# HELPERS
+# =========================================================
 def auto_name(path: str) -> str:
-    """Auto-rename if file already exists"""
+    """Auto-rename file if it already exists"""
     blob = bucket.blob(path)
     if not blob.exists():
         return path
@@ -41,6 +47,7 @@ def upload_bytes(path: str, data: bytes, content_type: str):
     return path
 
 def html_to_docx(html: str) -> bytes:
+    """Used ONLY for reports created inside the editor"""
     doc = Document()
     for line in html.replace("<br>", "\n").split("\n"):
         doc.add_paragraph(line)
@@ -57,12 +64,16 @@ def html_to_pdf(html: str) -> bytes:
     bio.seek(0)
     return bio.read()
 
-# ================= BASIC =================
+# =========================================================
+# BASIC
+# =========================================================
 @app.route("/")
 def home():
     return "SERVER RUNNING", 200
 
-# ================= SAVE REPORT =================
+# =========================================================
+# SAVE REPORT (EDITOR → DOCX)
+# =========================================================
 @app.route("/save_report", methods=["POST"])
 def save_report():
     d = request.json
@@ -83,7 +94,9 @@ def save_report():
 
     return jsonify({"saved": [saved], "skipped": []})
 
-# ================= SAVE TEMPLATE =================
+# =========================================================
+# SAVE TEMPLATE
+# =========================================================
 @app.route("/save_template", methods=["POST"])
 def save_template():
     d = request.json
@@ -91,11 +104,17 @@ def save_template():
     name = d["name"].replace(" ", "_") + ".html"
 
     path = f"templates/{modality}/{name}"
-    saved = upload_bytes(path, d["content"].encode("utf-8"), "text/html")
+    saved = upload_bytes(
+        path,
+        d["content"].encode("utf-8"),
+        "text/html"
+    )
 
     return jsonify({"saved": [saved], "skipped": []})
 
-# ================= LIST TEMPLATES =================
+# =========================================================
+# LIST TEMPLATES
+# =========================================================
 @app.route("/list_templates")
 def list_templates():
     modality = request.args.get("modality")
@@ -109,7 +128,9 @@ def list_templates():
 
     return jsonify({"templates": templates})
 
-# ================= LOAD TEMPLATE =================
+# =========================================================
+# LOAD TEMPLATE
+# =========================================================
 @app.route("/load_template")
 def load_template():
     modality = request.args["modality"]
@@ -118,7 +139,9 @@ def load_template():
     blob = bucket.blob(f"templates/{modality}/{filename}")
     return jsonify({"content": blob.download_as_text()})
 
-# ================= BATCH UPLOAD TEMPLATES =================
+# =========================================================
+# BATCH UPLOAD TEMPLATES (RAW STORAGE)
+# =========================================================
 @app.route("/batch_upload_templates", methods=["POST"])
 def batch_upload_templates():
     modality = request.form["modality"]
@@ -127,13 +150,19 @@ def batch_upload_templates():
     for f in request.files.getlist("files"):
         try:
             path = f"templates/{modality}/{f.filename}"
-            saved.append(upload_bytes(path, f.read(), f.content_type))
+            saved.append(upload_bytes(
+                path,
+                f.read(),
+                f.content_type
+            ))
         except Exception as e:
             skipped.append({"file": f.filename, "reason": str(e)})
 
     return jsonify({"saved": saved, "skipped": skipped})
 
-# ================= BATCH UPLOAD REPORTS (SAFE) =================
+# =========================================================
+# BATCH UPLOAD REPORTS (RAW STORAGE – SAFE)
+# =========================================================
 @app.route("/batch_upload_reports_auto", methods=["POST"])
 def batch_upload_reports_auto():
     modality = request.form["modality"]
@@ -141,15 +170,20 @@ def batch_upload_reports_auto():
 
     for f in request.files.getlist("files"):
         try:
-            # DO NOT parse DOCX files
             path = f"reports/{modality}/{f.filename}"
-            saved.append(upload_bytes(path, f.read(), f.content_type))
+            saved.append(upload_bytes(
+                path,
+                f.read(),
+                f.content_type
+            ))
         except Exception as e:
             skipped.append({"file": f.filename, "reason": str(e)})
 
     return jsonify({"saved": saved, "skipped": skipped})
 
-# ================= LIST REPORTS =================
+# =========================================================
+# LIST REPORTS
+# =========================================================
 @app.route("/list_reports")
 def list_reports():
     modality = request.args.get("modality")
@@ -166,7 +200,9 @@ def list_reports():
 
     return jsonify({"reports": reports})
 
-# ================= DOWNLOAD REPORT =================
+# =========================================================
+# DOWNLOAD REPORT
+# =========================================================
 @app.route("/download_report")
 def download_report():
     path = request.args["path"]
@@ -189,14 +225,12 @@ def download_report():
         download_name=os.path.basename(path)
     )
 
-# ================= RUN (RENDER REQUIRED) =================
+# =========================================================
+# RUN (RENDER)
+# =========================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
-    
-
-
 
 
 
