@@ -26,10 +26,10 @@ def auto_name(path):
     base, ext = os.path.splitext(path)
     return f"{base}_{int(time.time())}{ext}"
 
-def upload_bytes(path, data, ctype):
+def upload_bytes(path, data, content_type):
     path = auto_name(path)
     blob = bucket.blob(path)
-    blob.upload_from_string(data, content_type=ctype)
+    blob.upload_from_string(data, content_type=content_type)
     return path
 
 def html_to_docx(html):
@@ -96,7 +96,6 @@ def list_templates():
         for b in bucket.list_blobs(prefix=prefix)
         if not b.name.endswith("/")
     ]
-
     return jsonify({"templates": files})
 
 # ================= LOAD TEMPLATE =================
@@ -104,7 +103,6 @@ def list_templates():
 def load_template():
     modality = request.args["modality"]
     filename = request.args["filename"]
-
     blob = bucket.blob(f"templates/{modality}/{filename}")
     return jsonify({"content": blob.download_as_text()})
 
@@ -117,13 +115,17 @@ def batch_upload_templates():
     for f in request.files.getlist("files"):
         try:
             path = f"templates/{modality}/{f.filename}"
-            saved.append(upload_bytes(path, f.read(), f.content_type))
+            saved.append(upload_bytes(
+                path,
+                f.read(),
+                f.content_type or "application/octet-stream"
+            ))
         except Exception as e:
             skipped.append({"file": f.filename, "reason": str(e)})
 
     return jsonify({"saved": saved, "skipped": skipped})
 
-# ================= BATCH UPLOAD REPORTS =================
+# ================= BATCH UPLOAD REPORTS (FIXED) =================
 @app.route("/batch_upload_reports_auto", methods=["POST"])
 def batch_upload_reports_auto():
     modality = request.form["modality"]
@@ -131,8 +133,13 @@ def batch_upload_reports_auto():
 
     for f in request.files.getlist("files"):
         try:
+            # DO NOT parse DOCX files. Ever.
             path = f"reports/{modality}/{f.filename}"
-            saved.append(upload_bytes(path, f.read(), f.content_type))
+            saved.append(upload_bytes(
+                path,
+                f.read(),
+                f.content_type or "application/octet-stream"
+            ))
         except Exception as e:
             skipped.append({"file": f.filename, "reason": str(e)})
 
