@@ -147,9 +147,12 @@ function fetchReports(){
       (d.reports || []).forEach(r => {
         const div = document.createElement('div');
         div.className = 'top-row';
-        div.textContent = r.filename || 'Unnamed report';
+        div.innerHTML = '<div class="field large"><b>' + (r.filename || 'Unnamed report') + '</b></div>' +
+          '<button class="btn-report" onclick="window.open(\'' + API + '/download_report?path=' + encodeURIComponent(r.path) + '&type=docx\',\'_blank\')">Word</button>' +
+          '<button class="btn-template" onclick="window.open(\'' + API + '/download_report?path=' + encodeURIComponent(r.path) + '&type=pdf\',\'_blank\')">PDF</button>';
         list.appendChild(div);
       });
+      if(!list.children.length) list.innerHTML = '<i>No reports found</i>';
     })
     .catch(e => result.textContent = e.message);
 }
@@ -199,5 +202,6 @@ function batchUploadReportsDifferentPatients(){
 </script>
 </body>
 </html>
+
 
 
