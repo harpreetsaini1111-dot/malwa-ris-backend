@@ -72,13 +72,16 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
   <button class="btn-template" onclick="saveTemplate()">Save Template</button>
 </div>
 
-<br>
-<h4>Batch Upload Templates</h4>
+<hr>
+
+<h3>Batch Upload Templates</h3>
 <div class="top-row">
-  <div class="field small"><label>Modality</label>
-    <select id="batchTemplateModality"><option value="">–</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+  <div class="field small"><label>Template Modality</label>
+    <select id="uploadTemplateModality"><option value="">–</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
   </div>
-  <div class="field large"><input type="file" id="batchTemplates" multiple accept=".docx,.html"></div>
+  <div class="field large"><label>Select Template Files</label>
+    <input type="file" id="uploadTemplateFile" multiple accept=".docx,.html">
+  </div>
   <button class="btn-template" onclick="batchUploadTemplates()">Upload Templates</button>
 </div>
 
@@ -87,10 +90,12 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
 <h3>Batch Upload Reports</h3>
 <div class="top-row">
   <div class="field small"><label>Modality</label>
-    <select id="uploadReportModality"><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
+    <select id="uploadReportModality"><option value="">–</option><option>CT</option><option>MRI</option><option>USG</option><option>XRAY</option></select>
   </div>
-  <div class="field large"><input type="file" id="uploadReportFile" multiple accept=".docx,.html"></div>
-  <button class="btn-report" onclick="batchUploadReportsDifferentPatients()">Upload</button>
+  <div class="field large"><label>Select Files</label>
+    <input type="file" id="uploadReportFile" multiple accept=".docx,.html,.pdf">
+  </div>
+  <button class="btn-report" onclick="batchUploadReportsDifferentPatients()">Upload Reports</button>
 </div>
 
 <hr>
@@ -127,134 +132,71 @@ async function safeFetch(url, options={}){
   try{return JSON.parse(text)}catch{return {message:text}}
 }
 
-function parseReportInfo(filename){
-  const base = filename.replace(/\.[^/.]+$/, "");
-  const parts = base.split("_");
-
-  let patient_name = "UNKNOWN";
-  let patient_id = "-";
-  let date = "-";
-  let modality = "-";
-
-  // Date: YYYYMMDD or YYYY-MM-DD
-  parts.forEach(p => {
-    if (/^\d{8}$/.test(p)) {
-      date = p.slice(0,4) + "-" + p.slice(4,6) + "-" + p.slice(6,8);
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(p)) {
-      date = p;
-    }
-  });
-
-  // Patient ID: small numeric (avoid date)
-  parts.forEach(p => {
-    if (/^\d+$/.test(p) && p.length <= 4) {
-      patient_id = p;
-    }
-  });
-
-  // Modality if present
-  parts.forEach(p => {
-    if (["CT","MRI","USG","XRAY","X-RAY"].includes(p)) {
-      modality = p;
-    }
-  });
-
-  // Name = everything before ID or date
-  const stopIndex = parts.findIndex(
-    p => p === patient_id || p === date.replace(/-/g, "")
-  );
-  if (stopIndex > 0) {
-    patient_name = parts.slice(0, stopIndex).join(" ");
-  }
-
-  return { patient_name, patient_id, date, modality };
-}
-
-
 function fetchReports(){
-  reportList.innerHTML="Loading…";
-  const p=new URLSearchParams();
-  if(fetchModality.value) p.append("modality",fetchModality.value);
-  if(fetchName.value) p.append("name",fetchName.value);
-  if(fetchDateFrom.value) p.append("from",fetchDateFrom.value);
-  if(fetchDateTo.value) p.append("to",fetchDateTo.value);
-  safeFetch(API+"/list_reports?"+p.toString())
-  .then(d=>{
-    reportList.innerHTML="";
-    (d.reports||[]).forEach(r=>{
-      const info=parseReportInfo(r.filename);
-      // Fallback: derive modality from path if missing
-      if(info.modality === '-' && r.path){
-        if(r.path.includes('/CT/')) info.modality = 'CT';
-        else if(r.path.includes('/MRI/')) info.modality = 'MRI';
-        else if(r.path.includes('/USG/')) info.modality = 'USG';
-        else if(r.path.includes('/XRAY/')) info.modality = 'XRAY';
-      }
-      const div=document.createElement("div");
-      div.className="top-row";
-      div.style.marginBottom="8px";
-      div.innerHTML=`<div class=\"field large\"><b>${info.patient_name}</b><br>ID: ${info.patient_id}<br>Date: ${info.date}<br>Modality: ${info.modality}</div><div class=\"field medium\"><small>${r.filename}</small></div><button onclick=\"window.open('${API}/download_report?path=${encodeURIComponent(r.path)}&type=docx','_blank')\">Word</button><button onclick=\"window.open('${API}/download_report?path=${encodeURIComponent(r.path)}&type=pdf','_blank')\">PDF</button>`;
-      reportList.appendChild(div);
-    });
-  }).catch(e=>result.textContent=e.message);
+  const list = document.getElementById('reportList');
+  list.innerHTML = 'Loading…';
+  const p = new URLSearchParams();
+  if(fetchModality.value) p.append('modality', fetchModality.value);
+  if(fetchName.value) p.append('name', fetchName.value);
+  if(fetchDateFrom.value) p.append('from', fetchDateFrom.value);
+  if(fetchDateTo.value) p.append('to', fetchDateTo.value);
+
+  safeFetch(API + '/list_reports?' + p.toString())
+    .then(d => {
+      list.innerHTML = '';
+      (d.reports || []).forEach(r => {
+        const div = document.createElement('div');
+        div.className = 'top-row';
+        div.textContent = r.filename || 'Unnamed report';
+        list.appendChild(div);
+      });
+    })
+    .catch(e => result.textContent = e.message);
 }
 
 function clearFetchReports(){
-  fetchModality.value = "";
-  fetchName.value = "";
-  fetchDateFrom.value = "";
-  fetchDateTo.value = "";
-  reportList.innerHTML = "";
-  result.textContent = "Cleared";
-}
-
-function saveReport(){
-  safeFetch(API+"/save_report",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({modality:reportModality.value,patient_name:patientName.value||"UNKNOWN",patient_id:patientId.value||"AUTO",date:reportDate.value||new Date().toISOString().slice(0,10),content:content.innerHTML})})
-  .then(d=>result.textContent=JSON.stringify(d,null,2))
-  .catch(e=>result.textContent=e.message);
-}
-
-function saveTemplate(){
-  if(!templateModality.value){result.textContent="Select template modality";return;}
-  const name=prompt("Template name?"); if(!name)return;
-  safeFetch(API+"/save_template",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({modality:templateModality.value,name,content:content.innerHTML})})
-  .then(d=>result.textContent=JSON.stringify(d,null,2))
-  .catch(e=>result.textContent=e.message);
-}
-
-function loadTemplateList(){
-  templateList.innerHTML="<option>Loading…</option>";
-  if(!templateModality.value) return;
-  safeFetch(API+"/list_templates?modality="+templateModality.value)
-  .then(d=>{templateList.innerHTML="<option value=''>Select template</option>";(d.templates||[]).forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;templateList.appendChild(o);});});
-}
-
-function loadTemplate(){
-  if(!templateList.value)return;
-  safeFetch(API+`/load_template?modality=${templateModality.value}&filename=${encodeURIComponent(templateList.value)}`)
-  .then(d=>content.innerHTML=d.content||"");
+  fetchModality.value = '';
+  fetchName.value = '';
+  fetchDateFrom.value = '';
+  fetchDateTo.value = '';
+  reportList.innerHTML = '';
+  result.textContent = 'Cleared';
 }
 
 function batchUploadTemplates(){
-  const modality=batchTemplateModality.value||templateModality.value;
-  if(!modality){result.textContent="Select template modality";return;}
-  const fd=new FormData(); fd.append("modality",modality);
-  for(const f of batchTemplates.files) fd.append("files",f);
-  safeFetch(API+"/batch_upload_templates",{method:"POST",body:fd})
-  .then(d=>result.textContent=JSON.stringify(d,null,2))
-  .catch(e=>result.textContent=e.message);
+  const modality = uploadTemplateModality.value;
+  if(!modality){ result.textContent = 'Select template modality'; return; }
+
+  const fd = new FormData();
+  fd.append('modality', modality);
+  for(const f of uploadTemplateFile.files){
+    fd.append('files', f);
+  }
+
+  safeFetch(API + '/batch_upload_templates', { method:'POST', body: fd })
+    .then(d => result.textContent = JSON.stringify(d, null, 2))
+    .catch(e => result.textContent = e.message);
 }
 
 function batchUploadReportsDifferentPatients(){
-  const fd=new FormData(); fd.append("modality",uploadReportModality.value);
-  for(const f of uploadReportFile.files) fd.append("files",f);
-  safeFetch(API+"/batch_upload_reports_auto",{method:"POST",body:fd})
-  .then(d=>result.textContent=JSON.stringify(d,null,2))
-  .catch(e=>result.textContent=e.message);
+  const modality = uploadReportModality.value;
+  if(!modality){ result.textContent = 'Select modality'; return; }
+
+  const fd = new FormData();
+  fd.append('modality', modality);
+
+  // IMPORTANT: force backend to use SAME path as editor-saved reports
+  fd.append('use_editor_path', 'true');
+
+  for(const f of uploadReportFile.files){
+    fd.append('files', f);
+  }
+
+  safeFetch(API + '/batch_upload_reports_auto', { method:'POST', body: fd })
+    .then(d => result.textContent = JSON.stringify(d, null, 2))
+    .catch(e => result.textContent = e.message);
 }
 </script>
 </body>
 </html>
-
 
