@@ -57,6 +57,8 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
 <br>
 <div class="top-row">
   <button class="btn-report" onclick="saveReport()">Save Report</button>
+  <button class="btn-template" onclick="downloadFromEditor('docx')">Download Word</button>
+  <button class="btn-template" onclick="downloadFromEditor('pdf')">Download PDF</button>
 </div>
 
 <hr>
@@ -120,6 +122,66 @@ pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:8px;max-height:2
 </div>
 
 <script>
+// --------- MISSING FUNCTION FIXES (prevent runtime errors) ---------
+function saveReport(){
+  const payload = {
+    modality: reportModality.value,
+    patient_name: patientName.value || 'UNKNOWN',
+    patient_id: patientId.value || 'AUTO',
+    date: reportDate.value || new Date().toISOString().slice(0,10),
+    content: content.innerHTML
+  };
+
+  result.textContent = 'Saving…';
+
+  safeFetch(API + '/save_report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(d => {
+    result.textContent = 'Report saved successfully';
+  })
+  .catch(e => {
+    result.textContent = 'Save failed: ' + e.message;
+  });
+}
+
+function loadTemplateList(){
+  if(!templateModality.value){ templateList.innerHTML = '<option value="">Select template</option>'; return; }
+  safeFetch(API + '/list_templates?modality=' + templateModality.value)
+    .then(d => {
+      templateList.innerHTML = '<option value="">Select template</option>';
+      (d.templates || []).forEach(t => {
+        const o = document.createElement('option');
+        o.value = t; o.textContent = t;
+        templateList.appendChild(o);
+      });
+    })
+    .catch(e => result.textContent = e.message);
+}
+
+function loadTemplate(){
+  if(!templateList.value) return;
+  safeFetch(API + '/load_template?modality=' + templateModality.value + '&filename=' + encodeURIComponent(templateList.value))
+    .then(d => content.innerHTML = d.content || '')
+    .catch(e => result.textContent = e.message);
+}
+
+function saveTemplate(){
+  if(!templateModality.value){ result.textContent = 'Select template modality'; return; }
+  const name = prompt('Template name?');
+  if(!name) return;
+  safeFetch(API + '/save_template', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ modality: templateModality.value, name: name, content: content.innerHTML })
+  })
+  .then(d => result.textContent = JSON.stringify(d,null,2))
+  .catch(e => result.textContent = e.message);
+}
+
+
 const API = "https://malwa-ris-backend.onrender.com";
 function cmd(c){document.execCommand(c,false,null)}
 function setFont(f){if(f)document.execCommand('fontName',false,f)}
@@ -187,8 +249,6 @@ function batchUploadReportsDifferentPatients(){
 
   const fd = new FormData();
   fd.append('modality', modality);
-
-  // IMPORTANT: force backend to use SAME path as editor-saved reports
   fd.append('use_editor_path', 'true');
 
   for(const f of uploadReportFile.files){
@@ -198,6 +258,38 @@ function batchUploadReportsDifferentPatients(){
   safeFetch(API + '/batch_upload_reports_auto', { method:'POST', body: fd })
     .then(d => result.textContent = JSON.stringify(d, null, 2))
     .catch(e => result.textContent = e.message);
+}
+
+function downloadFromEditor(type){
+  const payload = {
+    modality: reportModality.value,
+    patient_name: patientName.value || 'UNKNOWN',
+    patient_id: patientId.value || 'AUTO',
+    date: reportDate.value || new Date().toISOString().slice(0,10),
+    content: content.innerHTML,
+    type: type
+  };
+
+  fetch(API + '/download_from_editor', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(res => {
+    if(!res.ok) throw new Error('Download failed');
+    return res.blob();
+  })
+  .then(blob => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'report.' + (type === 'pdf' ? 'pdf' : 'docx');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  })
+  .catch(err => result.textContent = err.message);
 }
 </script>
 </body>
