@@ -31,7 +31,6 @@ bucket = client.bucket(BUCKET_NAME)
 # HELPERS
 # =========================================================
 def auto_name(path: str) -> str:
-    """Auto-rename file if it already exists"""
     blob = bucket.blob(path)
     if not blob.exists():
         return path
@@ -41,17 +40,15 @@ def auto_name(path: str) -> str:
 def upload_bytes(path: str, data: bytes, content_type: str):
     path = auto_name(path)
     blob = bucket.blob(path)
-    blob.upload_from_string(
-        data,
-        content_type=content_type or "application/octet-stream"
-    )
+    blob.upload_from_string(data, content_type=content_type)
     return path
 
 def html_to_docx(html_text: str) -> bytes:
-    """Used ONLY for reports created inside the editor"""
     doc = Document()
-    for line in html_text.replace("<br>", "\n").split("\n"):
-        doc.add_paragraph(line)
+    clean = html_text.replace("<br>", "\n").replace("</p>", "\n").replace("<p>", "")
+    for line in clean.split("\n"):
+        if line.strip():
+            doc.add_paragraph(line.strip())
     bio = io.BytesIO()
     doc.save(bio)
     bio.seek(0)
@@ -61,12 +58,11 @@ def html_to_pdf(html_text: str) -> bytes:
     bio = io.BytesIO()
     styles = getSampleStyleSheet()
     pdf = SimpleDocTemplate(bio)
-    pdf.build([Paragraph(html_text, styles["Normal"])])
+    pdf.build([Paragraph(html.escape(html_text), styles["Normal"])])
     bio.seek(0)
     return bio.read()
 
 def docx_to_html(file_obj) -> str:
-    """Convert DOCX template to simple HTML for editor"""
     doc = Document(file_obj)
     blocks = []
     for p in doc.paragraphs:
@@ -83,18 +79,18 @@ def home():
     return "SERVER RUNNING", 200
 
 # =========================================================
-# SAVE REPORT (EDITOR → DOCX)
+# SAVE REPORT (EDITOR → GCS DOCX)
 # =========================================================
 @app.route("/save_report", methods=["POST"])
 def save_report():
     d = request.json
-
     modality = d["modality"]
     patient = d.get("patient_name", "UNKNOWN").replace(" ", "_")
+    pid = d.get("patient_id", "AUTO")
     date = d.get("date", "")
     html_text = d.get("content", "")
 
-    filename = f"{patient}_{date}.docx"
+    filename = f"{patient}_{pid}_{date}_{modality}.docx"
     path = f"reports/{modality}/{filename}"
 
     saved = upload_bytes(
@@ -106,7 +102,41 @@ def save_report():
     return jsonify({"saved": [saved], "skipped": []})
 
 # =========================================================
-# SAVE TEMPLATE (EDITOR HTML)
+# DOWNLOAD FROM EDITOR (HTML → DOCX / PDF)
+# =========================================================
+@app.route("/download_from_editor", methods=["POST"])
+def download_from_editor():
+    d = request.json
+
+    modality = d.get("modality", "REPORT")
+    patient = d.get("patient_name", "UNKNOWN").replace(" ", "_")
+    pid = d.get("patient_id", "AUTO")
+    date = d.get("date", "")
+    html_text = d.get("content", "")
+    rtype = d.get("type", "docx")
+
+    filename = f"{patient}_{pid}_{date}_{modality}.{rtype}"
+
+    if rtype == "docx":
+        return send_file(
+            io.BytesIO(html_to_docx(html_text)),
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+    if rtype == "pdf":
+        return send_file(
+            io.BytesIO(html_to_pdf(html_text)),
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/pdf"
+        )
+
+    return jsonify({"error": "Unsupported type"}), 400
+
+# =========================================================
+# SAVE TEMPLATE
 # =========================================================
 @app.route("/save_template", methods=["POST"])
 def save_template():
@@ -115,12 +145,7 @@ def save_template():
     name = d["name"].replace(" ", "_") + ".html"
 
     path = f"templates/{modality}/{name}"
-    saved = upload_bytes(
-        path,
-        d["content"].encode("utf-8"),
-        "text/html"
-    )
-
+    saved = upload_bytes(path, d["content"].encode(), "text/html")
     return jsonify({"saved": [saved], "skipped": []})
 
 # =========================================================
@@ -128,7 +153,7 @@ def save_template():
 # =========================================================
 @app.route("/list_templates")
 def list_templates():
-    modality = request.args.get("modality")
+    modality = request.args["modality"]
     prefix = f"templates/{modality}/"
 
     templates = [
@@ -136,11 +161,10 @@ def list_templates():
         for b in bucket.list_blobs(prefix=prefix)
         if not b.name.endswith("/")
     ]
-
     return jsonify({"templates": templates})
 
 # =========================================================
-# LOAD TEMPLATE (HTML ONLY)
+# LOAD TEMPLATE
 # =========================================================
 @app.route("/load_template")
 def load_template():
@@ -151,7 +175,7 @@ def load_template():
     return jsonify({"content": blob.download_as_text()})
 
 # =========================================================
-# BATCH UPLOAD TEMPLATES (HTML + DOCX → HTML)
+# BATCH UPLOAD TEMPLATES
 # =========================================================
 @app.route("/batch_upload_templates", methods=["POST"])
 def batch_upload_templates():
@@ -161,35 +185,26 @@ def batch_upload_templates():
     for f in request.files.getlist("files"):
         try:
             base = os.path.splitext(f.filename)[0]
-
-            # HTML template
             if f.filename.lower().endswith(".html"):
-                content = f.read().decode("utf-8", errors="ignore")
-                path = f"templates/{modality}/{base}.html"
-                saved.append(upload_bytes(path, content.encode("utf-8"), "text/html"))
-
-            # DOCX template → convert to HTML
+                saved.append(upload_bytes(
+                    f"templates/{modality}/{base}.html",
+                    f.read(),
+                    "text/html"
+                ))
             elif f.filename.lower().endswith(".docx"):
                 html_content = docx_to_html(f)
-                path = f"templates/{modality}/{base}.html"
-                saved.append(upload_bytes(path, html_content.encode("utf-8"), "text/html"))
-
-            else:
-                skipped.append({
-                    "file": f.filename,
-                    "reason": "Unsupported template format"
-                })
-
+                saved.append(upload_bytes(
+                    f"templates/{modality}/{base}.html",
+                    html_content.encode(),
+                    "text/html"
+                ))
         except Exception as e:
-            skipped.append({
-                "file": f.filename,
-                "reason": str(e)
-            })
+            skipped.append({"file": f.filename, "reason": str(e)})
 
     return jsonify({"saved": saved, "skipped": skipped})
 
 # =========================================================
-# BATCH UPLOAD REPORTS (RAW STORAGE – SAFE)
+# BATCH UPLOAD REPORTS
 # =========================================================
 @app.route("/batch_upload_reports_auto", methods=["POST"])
 def batch_upload_reports_auto():
@@ -198,9 +213,8 @@ def batch_upload_reports_auto():
 
     for f in request.files.getlist("files"):
         try:
-            path = f"reports/{modality}/{f.filename}"
             saved.append(upload_bytes(
-                path,
+                f"reports/{modality}/{f.filename}",
                 f.read(),
                 f.content_type
             ))
@@ -219,17 +233,16 @@ def list_reports():
 
     reports = []
     for b in bucket.list_blobs(prefix=prefix):
-        if b.name.endswith("/"):
-            continue
-        reports.append({
-            "filename": b.name.split("/")[-1],
-            "path": b.name
-        })
+        if not b.name.endswith("/"):
+            reports.append({
+                "filename": b.name.split("/")[-1],
+                "path": b.name
+            })
 
     return jsonify({"reports": reports})
 
 # =========================================================
-# DOWNLOAD REPORT
+# DOWNLOAD SAVED REPORT
 # =========================================================
 @app.route("/download_report")
 def download_report():
@@ -240,25 +253,27 @@ def download_report():
     data = blob.download_as_bytes()
 
     if rtype == "pdf":
-        pdf = html_to_pdf(data.decode(errors="ignore"))
         return send_file(
-            io.BytesIO(pdf),
+            io.BytesIO(html_to_pdf(data.decode(errors="ignore"))),
             as_attachment=True,
-            download_name=os.path.basename(path).replace(".docx", ".pdf")
+            download_name=os.path.basename(path).replace(".docx", ".pdf"),
+            mimetype="application/pdf"
         )
 
     return send_file(
         io.BytesIO(data),
         as_attachment=True,
-        download_name=os.path.basename(path)
+        download_name=os.path.basename(path),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
 # =========================================================
-# RUN (RENDER)
+# RUN
 # =========================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
